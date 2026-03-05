@@ -1,0 +1,133 @@
+###############################################################
+# Pool Skimmer Clog Detection Automation
+#
+# Sensors used:
+#   - sensor.pool_vsf_gpm   : Pool pump flow rate (GPM)
+#   - sensor.pool_vsf_rpm   : Pool pump motor speed (RPM)
+#
+# Logic:
+#   - Normal operating range: 3,000–3,450 RPM / ~80 GPM
+#   - Alert triggers when GPM drops 15%+ below 80 GPM (i.e., <= 68 GPM)
+#     WHILE RPM remains >= 3,000 RPM
+#   - Condition must persist for 5 minutes before notifying
+#   - Re-notifies every 2 hours if the problem is not resolved
+#   - Sends a clear notification when flow rate recovers
+###############################################################
+
+- id: pool_skimmer_clog_monitor
+  alias: "Pool - Skimmer Clog Monitor"
+  description: >
+    Single automation that monitors pool pump GPM and RPM.
+    Alerts when flow drops 15%+ below normal while RPM stays high
+    (indicating clogged skimmers), re-notifies every 2 hours,
+    and confirms when the issue is resolved.
+
+  trigger:
+    # Fires when GPM drops into clogged range
+    - platform: numeric_state
+      id: clogged
+      entity_id: sensor.pool_vsf_gpm
+      below: 68
+      for:
+        minutes: 5
+
+    # Fires when GPM recovers to normal range
+    - platform: numeric_state
+      id: recovered
+      entity_id: sensor.pool_vsf_gpm
+      above: 68
+      for:
+        minutes: 5
+
+  action:
+    - choose:
+
+        # ----------------------------------------------------------
+        # CASE 1: GPM dropped — skimmers likely clogged
+        # ----------------------------------------------------------
+        - conditions:
+            - condition: trigger
+              id: clogged
+            # Confirm RPM is still in normal range (not intentional low speed)
+            - condition: numeric_state
+              entity_id: sensor.pool_vsf_rpm
+              above: 2999
+
+          sequence:
+            # Send initial clog alert
+            - service: notify.mobile_app_pixel_8_pro
+              data:
+                title: "🏊 Pool Skimmer Alert"
+                message: >
+                  Skimmers may be clogged! Flow rate has dropped to
+                  {{ states('sensor.pool_vsf_gpm') | round(1) }} GPM
+                  (normal: ~80 GPM) while pump RPM is
+                  {{ states('sensor.pool_vsf_rpm') | round(0) }}.
+                  Please check and clean the skimmer baskets.
+                data:
+                  channel: "Pool Alerts"
+                  importance: high
+                  ttl: 0
+                  priority: high
+
+            # Re-notify every 2 hours while still clogged
+            - repeat:
+                while:
+                  - condition: numeric_state
+                    entity_id: sensor.pool_vsf_gpm
+                    below: 68
+                  - condition: numeric_state
+                    entity_id: sensor.pool_vsf_rpm
+                    above: 2999
+                sequence:
+                  - delay:
+                      hours: 2
+
+                  # Re-check after delay before sending reminder
+                  - condition: numeric_state
+                    entity_id: sensor.pool_vsf_gpm
+                    below: 68
+                  - condition: numeric_state
+                    entity_id: sensor.pool_vsf_rpm
+                    above: 2999
+
+                  - service: notify.mobile_app_pixel_8_pro
+                    data:
+                      title: "🏊 Pool Skimmer Still Clogged"
+                      message: >
+                        Reminder: Skimmers are still clogged!
+                        Current flow rate is
+                        {{ states('sensor.pool_vsf_gpm') | round(1) }} GPM
+                        (normal: ~80 GPM). Pump RPM is
+                        {{ states('sensor.pool_vsf_rpm') | round(0) }}.
+                        Please clean the skimmer baskets.
+                      data:
+                        channel: "Pool Alerts"
+                        importance: high
+                        ttl: 0
+                        priority: high
+
+        # ----------------------------------------------------------
+        # CASE 2: GPM recovered — skimmers are clear
+        # ----------------------------------------------------------
+        - conditions:
+            - condition: trigger
+              id: recovered
+            # Confirm pump is running at normal RPM
+            - condition: numeric_state
+              entity_id: sensor.pool_vsf_rpm
+              above: 2999
+
+          sequence:
+            - service: notify.mobile_app_pixel_8_pro
+              data:
+                title: "✅ Pool Flow Rate Restored"
+                message: >
+                  Pool skimmers are clear! Flow rate is back to
+                  {{ states('sensor.pool_vsf_gpm') | round(1) }} GPM.
+                  Pump RPM: {{ states('sensor.pool_vsf_rpm') | round(0) }}.
+                data:
+                  channel: "Pool Alerts"
+
+  mode: restart
+  max_exceeded: silent
