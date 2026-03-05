@@ -1,0 +1,21 @@
+# input_number/irrigation_helpers.yaml
+#
+# Place this file in: <config>/input_number/irrigation_helpers.yaml
+#
+# In configuration.yaml, add (or update) the input_number line to:
+#
+#   input_number: !include_dir_merge_named input_number/
+#
+# If you already have an existing input_number block or !include, move
+# those helpers into separate files inside the input_number/ folder —
+# one file per logical group works well.
+
+irrigation_et_deficit:
+  name: "Irrigation ET Deficit"
+  initial: 0
+  min: -5
+  max: 10
+  step: 0.01
+  unit_of_measurement: "in"
+  icon: mdi:water-percent
+  mode: box
