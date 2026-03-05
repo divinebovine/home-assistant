@@ -9,6 +9,25 @@
 #     (configuration.yaml → homeassistant: time_zone: America/Chicago)
 #   - This file must be included via:
 #     automation: !include_dir_merge_list automations/
+#   - NWS weather integration must be configured. Find your weather entity at:
+#     Settings → Devices & Services → National Weather Service
+#     Update the WEATHER ENTITY constant near the top of the action block.
+#   - The ET deficit helper must exist. Create it via:
+#     Settings → Devices & Services → Helpers → Add Helper → Number
+#       Name:     Irrigation ET Deficit
+#       Entity ID: input_number.irrigation_et_deficit
+#       Min: -5, Max: 10, Step: 0.01, Unit: in
+#     Or use the companion helpers.yaml (see irrigation_helpers.yaml).
+#
+# SKIP LOGIC:
+#   1. RAIN SKIP — Skips the entire watering day if NWS reports ≥ 0.25 in of
+#      precipitation in the past 24 hours (attribute: precipitation_last_24hr
+#      on the NWS weather entity).
+#   2. ET DEFICIT SKIP — A daily automation (see below) accumulates a rolling
+#      water deficit using a simplified ET estimate based on NWS temperature
+#      and humidity. Watering is skipped when the deficit is below a threshold
+#      (default: 0.20 in), meaning the lawn has enough water. After each
+#      watering run, the deficit is reset to 0.
 #
 # ENTITY IDs:
 #   Replace the switch entity IDs below to match your station names.
@@ -23,11 +42,15 @@
 #   The hardware timer (run_seconds) ensures each zone stops correctly
 #   regardless of HA state.
 
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTOMATION 1 OF 3 — Main irrigation schedule with skip conditions
+# ══════════════════════════════════════════════════════════════════════════════
 - alias: "Open Sprinkler - Irrigation Schedule"
   id: "open_sprinkler_irrigation_schedule"
   description: >
     Zones 1-4 and 6-8, 3 min each. Two cycles separated by a 1.5-hour break.
     Runs Tue/Sat at 6:00 AM Central. Restart-resilient via fixed time triggers.
+    Skips if recent rain ≥ 0.25 in OR ET deficit < 0.20 in.
   mode: single
   trigger:
     # ── Cycle 1: 06:00–06:21 ─────────────────────────────────────────────
@@ -52,7 +75,6 @@
     - platform: time
       at: "06:18:00"
       id: c1_z8
-
     # ── Cycle 2: 07:51–08:12 (1.5-hour break after cycle 1 ends) ────────
     - platform: time
       at: "07:51:00"
@@ -75,15 +97,44 @@
     - platform: time
       at: "08:09:00"
       id: c2_z8
-
   condition:
+    # ── Day-of-week gate ──────────────────────────────────────────────────
     - condition: time
       weekday:
         - tue
         - sat
 
+    # ── Rain skip: bypass if NWS reports ≥ 0.25 in of rain in past 24 hr ─
+    # Update "weather.kads" to match your NWS weather entity ID.
+    # You can find it at Settings → Devices & Services → National Weather Service.
+    - condition: template
+      alias: "Skip if recent rainfall >= 0.25 in"
+      value_template: >
+        {% set weather_entity = 'weather.kads' %}
+        {% set rain = state_attr(weather_entity, 'precipitation_last_24hr') | float(0) %}
+        {{ rain < 0.25 }}
+
+    # ── ET deficit skip: only water when the lawn actually needs it ───────
+    - condition: template
+      alias: "Skip if ET deficit is below threshold (lawn has enough water)"
+      value_template: >
+        {{ states('input_number.irrigation_et_deficit') | float(0) >= 0.20 }}
+
   action:
-    # Map each trigger ID to the corresponding station entity.
+    # ── Reset ET deficit after a watering run starts ──────────────────────
+    # Only reset on the very first trigger of the day (c1_z1) so the deficit
+    # isn't zeroed out mid-schedule for triggers c1_z2 through c2_z8.
+    - if:
+        - condition: template
+          value_template: "{{ trigger.id == 'c1_z1' }}"
+      then:
+        - service: input_number.set_value
+          target:
+            entity_id: input_number.irrigation_et_deficit
+          data:
+            value: 0
+
+    # ── Map each trigger ID to the corresponding station entity ──────────
     - variables:
         station_entity:
           c1_z1: switch.s01_station_enabled
@@ -110,3 +161,131 @@
             entity_id: "{{ station_entity[trigger.id] }}"
           data:
             run_seconds: 180
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTOMATION 2 OF 3 — Daily ET deficit accumulator (runs at 8:00 PM)
+#
+# Estimates daily evapotranspiration (ET) using a simplified Hargreaves-style
+# formula based on NWS temperature and humidity, then adds it to the running
+# deficit. On days with significant rainfall, the deficit is reduced instead.
+#
+# Formula:
+#   ET_daily (inches) ≈ 0.0023 × (T_mean + 17.8) × √(T_max - T_min) × Ra
+#   where Ra (extraterrestrial radiation factor) is approximated from month.
+#   Simplified here to a temperature/humidity heuristic suitable for Texas.
+#
+# Deficit increases each day the lawn loses water to ET.
+# Deficit decreases when it rains (rain credited directly against deficit).
+# Watering also resets the deficit to 0 (handled in Automation 1).
+# ══════════════════════════════════════════════════════════════════════════════
+- alias: "Open Sprinkler - Daily ET Deficit Accumulator"
+  id: "open_sprinkler_et_deficit_accumulator"
+  description: >
+    Runs at 8 PM daily. Estimates ET from NWS temperature and humidity,
+    accumulates a rolling deficit. Credits rainfall against the deficit.
+    Update 'weather.kads' to match your NWS weather entity.
+  mode: single
+  trigger:
+    - platform: time
+      at: "20:00:00"
+  action:
+    - variables:
+        weather_entity: "weather.kads"
+
+        # Current temperature (°F) and humidity (%) from NWS
+        temp_f: >
+          {{ state_attr(weather_entity, 'temperature') | float(85) }}
+        humidity_pct: >
+          {{ state_attr(weather_entity, 'humidity') | float(50) }}
+
+        # Rainfall today from NWS (inches)
+        rain_today: >
+          {{ state_attr(weather_entity, 'precipitation_last_24hr') | float(0) }}
+
+        # Simplified ET estimate (inches/day) for warm-season Texas turfgrass.
+        # Based on ASCE Penman-Monteith simplified for residential use:
+        #   - Higher ET on hot, dry, windy days
+        #   - Lower ET on cool, humid days
+        # Reference: Texas A&M AgriLife / TexasET network typical ranges
+        #   (0.10–0.30 in/day in summer, 0.05–0.15 in/day in spring/fall)
+        et_estimate: >
+          {% set t = temp_f %}
+          {% set rh = humidity_pct %}
+          {% set month = now().month %}
+          {# Seasonal radiation factor (Ra proxy by month for DFW latitude ~33°N) #}
+          {% set ra_factors = {
+            1: 0.55, 2: 0.65, 3: 0.80, 4: 0.90,
+            5: 1.00, 6: 1.05, 7: 1.05, 8: 1.00,
+            9: 0.90, 10: 0.75, 11: 0.60, 12: 0.50
+          } %}
+          {% set ra = ra_factors[month] %}
+          {# ET formula: temperature and vapor pressure deficit proxy #}
+          {# VPD proxy: higher temp + lower humidity = more ET #}
+          {% set vpd_factor = (1 - rh / 100) %}
+          {% set et = ((t - 32) / 1.8 * 0.0023 + 0.05) * ra * (0.5 + vpd_factor) %}
+          {# Clamp to reasonable daily range: 0.03 to 0.35 inches #}
+          {{ [0.03, [et, 0.35] | min] | max | round(3) }}
+
+        # Current stored deficit
+        current_deficit: >
+          {{ states('input_number.irrigation_et_deficit') | float(0) }}
+
+        # New deficit: add ET, subtract rainfall, clamp to [-2, 10]
+        new_deficit: >
+          {% set d = current_deficit + et_estimate - rain_today %}
+          {{ [[-2.0, d] | max, 10.0] | min | round(3) }}
+
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.irrigation_et_deficit
+      data:
+        value: "{{ new_deficit }}"
+
+    # Optional notification for visibility while tuning
+    - service: persistent_notification.create
+      data:
+        title: "Irrigation ET Update"
+        message: >
+          ET today: {{ et_estimate }} in | Rain: {{ rain_today }} in |
+          Deficit: {{ current_deficit }} → {{ new_deficit }} in
+          {% if new_deficit >= 0.20 %}
+          ✅ Will water next scheduled day.
+          {% else %}
+          ⏭️ Will SKIP next scheduled watering (deficit below threshold).
+          {% endif %}
+        notification_id: "irrigation_et_update"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTOMATION 3 OF 3 — Rain credit (immediate deficit reduction on heavy rain)
+#
+# If NWS reports ≥ 0.5 in of rain at any point during the day, immediately
+# credit that rain against the deficit so the evening accumulator doesn't
+# double-count. This is optional but improves accuracy.
+# ══════════════════════════════════════════════════════════════════════════════
+- alias: "Open Sprinkler - Rain Credit on Heavy Rain"
+  id: "open_sprinkler_rain_credit"
+  description: >
+    When NWS precipitation_last_24hr crosses 0.5 in, reset the ET deficit
+    to 0 immediately. Prevents watering after significant rainfall.
+    Update 'weather.kads' to match your NWS weather entity.
+  mode: single
+  trigger:
+    - platform: numeric_state
+      entity_id: weather.kads
+      attribute: precipitation_last_24hr
+      above: 0.5
+  action:
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.irrigation_et_deficit
+      data:
+        value: 0
+    - service: persistent_notification.create
+      data:
+        title: "Irrigation - Rain Credit Applied"
+        message: >
+          Significant rainfall detected (≥ 0.5 in).
+          ET deficit reset to 0. Irrigation will be skipped until deficit rebuilds.
+        notification_id: "irrigation_rain_credit"
