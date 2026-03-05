@@ -1,0 +1,112 @@
+# Open Sprinkler Irrigation Schedule
+#
+# Runs zones 1-4 and 6-8 for 3 minutes each (cycle 1: 06:00–06:21),
+# waits 1.5 hours, then repeats (cycle 2: 07:51–08:12).
+# Fires on Tuesdays and Saturdays at 6:00 AM.
+#
+# REQUIREMENTS:
+#   - Home Assistant timezone must be set to America/Chicago
+#     (configuration.yaml → homeassistant: time_zone: America/Chicago)
+#   - This file must be included via:
+#     automation: !include_dir_merge_list automations/
+#
+# ENTITY IDs:
+#   Replace the switch entity IDs below to match your station names.
+#   Find them at Settings → Devices & Services → OpenSprinkler.
+#   Format: switch.<station_name>_station_enabled
+#   Example: a station named "Front Lawn" → switch.front_lawn_station_enabled
+#
+# RESTART RESILIENCE:
+#   Each zone uses a fixed clock-time trigger rather than chained delays.
+#   If Home Assistant restarts, any triggers that already fired are simply
+#   skipped; all remaining zones for that day fire at their scheduled times.
+#   The hardware timer (run_seconds) ensures each zone stops correctly
+#   regardless of HA state.
+
+- alias: "Open Sprinkler - Irrigation Schedule"
+  id: "open_sprinkler_irrigation_schedule"
+  description: >
+    Zones 1-4 and 6-8, 3 min each. Two cycles separated by a 1.5-hour break.
+    Runs Tue/Sat at 6:00 AM Central. Restart-resilient via fixed time triggers.
+  mode: single
+  trigger:
+    # ── Cycle 1: 06:00–06:21 ─────────────────────────────────────────────
+    - platform: time
+      at: "06:00:00"
+      id: c1_z1
+    - platform: time
+      at: "06:03:00"
+      id: c1_z2
+    - platform: time
+      at: "06:06:00"
+      id: c1_z3
+    - platform: time
+      at: "06:09:00"
+      id: c1_z4
+    - platform: time
+      at: "06:12:00"
+      id: c1_z6
+    - platform: time
+      at: "06:15:00"
+      id: c1_z7
+    - platform: time
+      at: "06:18:00"
+      id: c1_z8
+
+    # ── Cycle 2: 07:51–08:12 (1.5-hour break after cycle 1 ends) ────────
+    - platform: time
+      at: "07:51:00"
+      id: c2_z1
+    - platform: time
+      at: "07:54:00"
+      id: c2_z2
+    - platform: time
+      at: "07:57:00"
+      id: c2_z3
+    - platform: time
+      at: "08:00:00"
+      id: c2_z4
+    - platform: time
+      at: "08:03:00"
+      id: c2_z6
+    - platform: time
+      at: "08:06:00"
+      id: c2_z7
+    - platform: time
+      at: "08:09:00"
+      id: c2_z8
+
+  condition:
+    - condition: time
+      weekday:
+        - tue
+        - sat
+
+  action:
+    # Map each trigger ID to the corresponding station entity.
+    - variables:
+        station_entity:
+          c1_z1: switch.s01_station_enabled
+          c1_z2: switch.s02_station_enabled
+          c1_z3: switch.s03_station_enabled
+          c1_z4: switch.s04_station_enabled
+          c1_z6: switch.s06_station_enabled
+          c1_z7: switch.s07_station_enabled
+          c1_z8: switch.s08_station_enabled
+          c2_z1: switch.s01_station_enabled
+          c2_z2: switch.s02_station_enabled
+          c2_z3: switch.s03_station_enabled
+          c2_z4: switch.s04_station_enabled
+          c2_z6: switch.s06_station_enabled
+          c2_z7: switch.s07_station_enabled
+          c2_z8: switch.s08_station_enabled
+
+    - if:
+        - condition: template
+          value_template: "{{ trigger.id in station_entity }}"
+      then:
+        - service: opensprinkler.run_station
+          target:
+            entity_id: "{{ station_entity[trigger.id] }}"
+          data:
+            run_seconds: 180
