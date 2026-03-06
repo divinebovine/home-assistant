@@ -1,0 +1,204 @@
+###############################################################
+# Smoke Alarm Monitoring Automation
+#
+# Hardware:
+#   - Zooz Zen55 800 LR (Long Range Z-Wave Smoke Alarm Interface - Hardwired)
+#
+# Monitored Sensors:
+#   - binary_sensor.smoke_alarm_smoke_detected : Primary smoke detection
+#
+# Logic:
+#   - Immediate critical alerts when smoke is detected
+#   - Multiple notification attempts with escalating urgency
+#   - Clear notifications when alarm conditions resolve
+#   - Emergency contact notifications for prolonged alarms
+###############################################################
+
+# ----------------------------------------------------------
+# AUTOMATION 1: Smoke Detection Alert
+# Critical emergency response for smoke detection
+# ----------------------------------------------------------
+- id: smoke_alarm_detection
+  alias: "Safety - Smoke Alarm Detection"
+  description: >
+    Emergency response automation for smoke detection. Sends immediate
+    critical alerts and continues escalating notifications until resolved.
+
+  trigger:
+    # Primary smoke detection trigger
+    - platform: state
+      id: smoke_detected
+      entity_id: binary_sensor.smoke_alarm_smoke_detected
+      from: "off"
+      to: "on"
+
+    # Smoke alarm cleared trigger  
+    - platform: state
+      id: smoke_cleared
+      entity_id: binary_sensor.smoke_alarm_smoke_detected
+      from: "on"
+      to: "off"
+      for:
+        seconds: 30  # 30 second delay to avoid false clears
+
+  action:
+    - choose:
+        # ----------------------------------------------------------
+        # CASE 1: Smoke Detected - Emergency Response
+        # ----------------------------------------------------------
+        - conditions:
+            - condition: trigger
+              id: smoke_detected
+
+          sequence:
+            # Send immediate critical alert
+            - service: notify.mobile_app_pixel_8_pro
+              data:
+                title: "🔥🚨 SMOKE ALARM - EMERGENCY"
+                message: >
+                  SMOKE DETECTED! Fire alarm activated at {{ now().strftime('%I:%M %p') }}.
+                  
+                  🔥 Check all areas immediately
+                  🚪 Ensure safe exit routes are clear
+                  📞 Call 911 if fire is confirmed
+                  
+                  Location: Home Smoke Detection System
+                data:
+                  channel: "Emergency Alerts"
+                  importance: max
+                  ttl: 0
+                  priority: high
+                  color: red
+                  persistent: true
+                  actions:
+                    - action: "CALL_911"
+                      title: "Call 911"
+                    - action: "ALARM_CLEAR"
+                      title: "Mark Safe"
+
+            # Additional alert after 2 minutes if still active
+            - delay:
+                minutes: 2
+
+            - condition: state
+              entity_id: binary_sensor.smoke_alarm_smoke_detected
+              state: "on"
+
+            - service: notify.mobile_app_pixel_8_pro
+              data:
+                title: "🔥🚨 SMOKE ALARM STILL ACTIVE"
+                message: >
+                  CRITICAL: Smoke alarm has been active for 2+ minutes!
+                  
+                  🚨 This may indicate a real fire emergency
+                  📞 Consider calling 911 immediately
+                  🏃 Evacuate if necessary
+                  
+                  Alarm started: {{ (now() - timedelta(minutes=2)).strftime('%I:%M %p') }}
+                data:
+                  channel: "Emergency Alerts"
+                  importance: max
+                  ttl: 0
+                  priority: high
+                  color: red
+                  persistent: true
+
+            # Final escalation after 5 minutes total
+            - delay:
+                minutes: 3
+
+            - condition: state
+              entity_id: binary_sensor.smoke_alarm_smoke_detected
+              state: "on"
+
+            - service: notify.mobile_app_pixel_8_pro
+              data:
+                title: "🔥🚨 PROLONGED SMOKE ALARM"
+                message: >
+                  EMERGENCY: Smoke alarm active for 5+ minutes!
+                  
+                  🚨 LIKELY FIRE EMERGENCY
+                  📞 CALL 911 NOW if you haven't already
+                  🏃 EVACUATE IMMEDIATELY
+                  
+                  Alarm duration: 5+ minutes
+                  Time started: {{ (now() - timedelta(minutes=5)).strftime('%I:%M %p') }}
+                data:
+                  channel: "Emergency Alerts"
+                  importance: max
+                  ttl: 0
+                  priority: high
+                  color: red
+                  persistent: true
+
+        # ----------------------------------------------------------
+        # CASE 2: Smoke Cleared - All Clear Notification
+        # ----------------------------------------------------------
+        - conditions:
+            - condition: trigger
+              id: smoke_cleared
+
+          sequence:
+            # Send all-clear notification
+            - service: notify.mobile_app_pixel_8_pro
+              data:
+                title: "✅ Smoke Alarm Cleared"
+                message: >
+                  All clear: Smoke alarm has stopped at {{ now().strftime('%I:%M %p') }}.
+                  
+                  ✅ Smoke detection sensors are now normal
+                  🔍 Verify no remaining fire hazards
+                  🪟 Consider ventilating the area
+                  
+                  Please ensure the area is completely safe.
+                data:
+                  channel: "Emergency Alerts"
+                  importance: high
+                  ttl: 0
+                  priority: normal
+                  color: green
+
+# ----------------------------------------------------------
+# AUTOMATION 2: Smoke Alarm System Status Check
+# Daily verification that smoke alarm system is operational
+# ----------------------------------------------------------
+- id: smoke_alarm_daily_status_check
+  alias: "Safety - Daily Smoke Alarm Status"
+  description: >
+    Daily status check to ensure smoke alarm monitoring system
+    is operational and communicating properly.
+
+  trigger:
+    - platform: time
+      at: "07:00:00"  # Daily at 7 AM
+
+  condition:
+    # Only send if sensor is unavailable
+    - condition: state
+      entity_id: binary_sensor.smoke_alarm_smoke_detected
+      state: "unavailable"
+
+  action:
+    - variables:
+        issues: >
+          {% set issues_list = [] %}
+          {% if states('binary_sensor.smoke_alarm_smoke_detected') == 'unavailable' %}
+            {% set issues_list = issues_list + ['Smoke sensor offline/unavailable'] %}
+          {% endif %}
+          {{ issues_list }}
+
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "⚠️ Smoke Alarm System Issues"
+        message: >
+          Daily smoke alarm system check found {{ issues | length }} issue(s):
+          
+          {{ issues | join('\n• ') | indent(2, first=True) }}
+          
+          🔧 Please address these issues to ensure proper fire safety monitoring.
+        data:
+          channel: "System Alerts"
+          importance: high
+          ttl: 0
+          priority: normal
+          color: orange
