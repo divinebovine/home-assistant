@@ -1,0 +1,225 @@
+###############################################################
+# Low Battery Monitoring Automation for Battery-Powered Devices
+#
+# Monitored Device Types:
+#   - Door locks (front/back door locks)
+#   - Motion sensors (various locations)
+#   - Door/window sensors (open/close sensors)
+#   - Other battery-powered smart home devices
+#
+# Logic:
+#   - Triggers when any device battery drops to 15% or below
+#   - Sends immediate alert with device name and current battery level
+#   - Re-notifies daily if battery remains low (below 20%)
+#   - Sends "battery replaced" confirmation when battery level rises above 80%
+#   - Uses device-friendly names in notifications when available
+###############################################################
+
+# ----------------------------------------------------------
+# AUTOMATION 1: Low Battery Alert
+# Monitors all battery-powered devices for low battery conditions
+# ----------------------------------------------------------
+- id: low_battery_alert
+  alias: "Devices - Low Battery Alert"
+  description: >
+    Monitors battery levels for all battery-powered devices and sends alerts
+    when batteries drop below 15%. Re-notifies daily until resolved.
+
+  trigger:
+    # Trigger when any battery level drops to 15% or below
+    - platform: numeric_state
+      entity_id: 
+        - sensor.front_door_lock_battery_level
+        - sensor.back_door_lock_battery_level
+        - sensor.front_door_open_close_sensor_battery_level
+        - sensor.back_door_open_close_sensor_battery_level
+        - sensor.kitchen_q_sensor_battery_level
+        - sensor.master_bedroom_q_sensor_battery_level
+        - sensor.office_q_sensor_battery_level
+      below: 15
+      for:
+        minutes: 5  # Avoid false alarms from temporary drops
+
+  condition:
+    # Only proceed if the device is actually unavailable or truly low
+    - condition: template
+      value_template: >
+        {{ trigger.to_state.state not in ['unknown', 'unavailable'] }}
+
+  action:
+    # Send immediate low battery alert
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "🔋 Low Battery Alert"
+        message: >
+          {{ trigger.to_state.attributes.friendly_name or trigger.entity_id.split('.')[1].replace('_', ' ').title() }}
+          battery is critically low at {{ trigger.to_state.state }}%!
+          Please replace the battery soon to avoid device failure.
+        data:
+          channel: "Device Alerts"
+          importance: high
+          ttl: 0
+          priority: high
+
+    # Tag the device with current timestamp for re-notification tracking
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.last_low_battery_alert
+      data:
+        value: "{{ trigger.entity_id }}: {{ now().timestamp() }}"
+
+# ----------------------------------------------------------
+# AUTOMATION 2: Daily Low Battery Reminder
+# Re-notifies for devices that remain below 20% battery
+# ----------------------------------------------------------
+- id: low_battery_daily_reminder
+  alias: "Devices - Daily Low Battery Reminder"
+  description: >
+    Daily reminder for battery-powered devices that still have low batteries
+    (below 20%). Helps ensure battery replacements aren't forgotten.
+
+  trigger:
+    - platform: time
+      at: "09:00:00"  # 9 AM daily reminder
+
+  condition:
+    # Only run if there are devices with low batteries
+    - condition: template
+      value_template: >
+        {{ states.sensor
+           | selectattr('entity_id', 'match', '.*battery.*')
+           | selectattr('state', 'is_number')
+           | selectattr('state', '<', 20)
+           | list | length > 0 }}
+
+  action:
+    # Get list of all low battery devices
+    - variables:
+        low_battery_devices: >
+          {% set devices = states.sensor
+             | selectattr('entity_id', 'match', '.*battery.*')
+             | selectattr('state', 'is_number')
+             | selectattr('state', '<', 20)
+             | list %}
+          {% set device_list = [] %}
+          {% for device in devices %}
+            {% set device_list = device_list + [
+              (device.attributes.friendly_name or device.entity_id.split('.')[1].replace('_', ' ').title()) 
+              + ': ' + device.state + '%'
+            ] %}
+          {% endfor %}
+          {{ device_list }}
+
+    # Send daily reminder if there are low battery devices
+    - condition: template
+      value_template: "{{ low_battery_devices | length > 0 }}"
+
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "🔋 Daily Battery Check"
+        message: >
+          Daily reminder: {{ low_battery_devices | length }} device(s) still have low batteries:
+          
+          {{ low_battery_devices | join('\n') }}
+          
+          Consider replacing these batteries today.
+        data:
+          channel: "Device Alerts"
+          importance: normal
+          ttl: 0
+          priority: normal
+
+# ----------------------------------------------------------
+# AUTOMATION 3: Battery Replaced Confirmation
+# Sends confirmation when a battery is successfully replaced
+# ----------------------------------------------------------
+- id: battery_replaced_confirmation
+  alias: "Devices - Battery Replaced Confirmation"
+  description: >
+    Sends a confirmation notification when a device battery level
+    rises above 80%, indicating successful battery replacement.
+
+  trigger:
+    # Trigger when battery level rises above 80%
+    - platform: numeric_state
+      entity_id: 
+        - sensor.front_door_lock_battery_level
+        - sensor.back_door_lock_battery_level
+        - sensor.front_door_open_close_sensor_battery_level
+        - sensor.back_door_open_close_sensor_battery_level
+        - sensor.kitchen_q_sensor_battery_level
+        - sensor.master_bedroom_q_sensor_battery_level
+        - sensor.office_q_sensor_battery_level
+      above: 80
+      for:
+        minutes: 2  # Brief delay to ensure reading is stable
+
+  condition:
+    # Only proceed if the previous state was low (below 30%)
+    - condition: template
+      value_template: >
+        {{ trigger.from_state.state is number and trigger.from_state.state < 30 }}
+
+  action:
+    # Send battery replacement confirmation
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "🔋✅ Battery Replaced"
+        message: >
+          Great! {{ trigger.to_state.attributes.friendly_name or trigger.entity_id.split('.')[1].replace('_', ' ').title() }}
+          battery has been successfully replaced. Current level: {{ trigger.to_state.state }}%.
+        data:
+          channel: "Device Alerts"
+          importance: low
+          ttl: 0
+          priority: normal
+
+# ----------------------------------------------------------
+# AUTOMATION 4: Weekly Battery Status Report
+# Provides a weekly summary of all battery levels
+# ----------------------------------------------------------
+- id: weekly_battery_report
+  alias: "Devices - Weekly Battery Report"
+  description: >
+    Weekly summary of all battery-powered device battery levels for proactive
+    monitoring and maintenance planning.
+
+  trigger:
+    - platform: time
+      at: "08:00:00"
+    - platform: template
+      value_template: "{{ now().weekday() == 6 }}"  # Sunday = 6
+
+  action:
+    - variables:
+        all_batteries: >
+          {% set devices = states.sensor
+             | selectattr('entity_id', 'match', '.*battery.*')
+             | selectattr('state', 'is_number')
+             | sort(attribute='state')
+             | list %}
+          {% set device_list = [] %}
+          {% for device in devices %}
+            {% set status = '🔴' if device.state < 15 else '🟡' if device.state < 30 else '🟢' %}
+            {% set device_list = device_list + [
+              status + ' ' +
+              (device.attributes.friendly_name or device.entity_id.split('.')[1].replace('_', ' ').title()) 
+              + ': ' + device.state + '%'
+            ] %}
+          {% endfor %}
+          {{ device_list }}
+
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "🔋📊 Weekly Battery Report"
+        message: >
+          Weekly battery-powered device status:
+          
+          {{ all_batteries | join('\n') }}
+          
+          🔴 Critical (<15%) | 🟡 Low (<30%) | 🟢 Good (≥30%)
+        data:
+          channel: "Device Reports"
+          importance: low
+          ttl: 0
+          priority: normal
