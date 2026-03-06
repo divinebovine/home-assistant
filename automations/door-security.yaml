@@ -4,8 +4,9 @@
 # Entities:
 #   - lock.front_door_lock                                  : Front door lock
 #   - lock.back_door_lock                                   : Back door lock
-#   - binary_sensor.front_door_open_close_sensor_is_open_2 : Front door open/close sensor
-#   - binary_sensor.back_door_open_close_sensor_is_open_2  : Back door open/close sensor
+#   - binary_sensor.front_door_open_close_sensor_window_door_is_open : Front door open/close sensor
+#   - binary_sensor.back_door_open_close_sensor_window_door_is_open  : Back door open/close sensor
+
 #
 # Helpers (see helpers/door_helpers.yaml):
 #   - timer.front_door_lock : 1-hour countdown, starts when front door is closed + unlocked
@@ -17,7 +18,6 @@
 #   - Notifies if the lock fails to engage after auto-lock attempt
 #   - Notifies if either door is left open for more than 15 minutes
 ###############################################################
-
 
 # ----------------------------------------------------------
 # AUTOMATION 1: Manage lock timers
@@ -41,15 +41,14 @@
 
     - platform: state
       id: front_door_changed
-      entity_id: binary_sensor.front_door_open_close_sensor_is_open_2
+      entity_id: binary_sensor.front_door_open_close_sensor_window_door_is_open
 
     - platform: state
       id: back_door_changed
-      entity_id: binary_sensor.back_door_open_close_sensor_is_open_2
+      entity_id: binary_sensor.back_door_open_close_sensor_window_door_is_open
 
   action:
     - choose:
-
         # Front door: start timer if now closed + unlocked
         - conditions:
             - condition: trigger
@@ -60,7 +59,7 @@
               entity_id: lock.front_door_lock
               state: unlocked
             - condition: state
-              entity_id: binary_sensor.front_door_open_close_sensor_is_open_2
+              entity_id: binary_sensor.front_door_open_close_sensor_window_door_is_open
               state: "off"
           sequence:
             - service: timer.start
@@ -79,7 +78,7 @@
                   entity_id: lock.front_door_lock
                   state: locked
                 - condition: state
-                  entity_id: binary_sensor.front_door_open_close_sensor_is_open_2
+                  entity_id: binary_sensor.front_door_open_close_sensor_window_door_is_open
                   state: "on"
           sequence:
             - service: timer.cancel
@@ -96,7 +95,7 @@
               entity_id: lock.back_door_lock
               state: unlocked
             - condition: state
-              entity_id: binary_sensor.back_door_open_close_sensor_is_open_2
+              entity_id: binary_sensor.back_door_open_close_sensor_window_door_is_open
               state: "off"
           sequence:
             - service: timer.start
@@ -115,7 +114,7 @@
                   entity_id: lock.back_door_lock
                   state: locked
                 - condition: state
-                  entity_id: binary_sensor.back_door_open_close_sensor_is_open_2
+                  entity_id: binary_sensor.back_door_open_close_sensor_window_door_is_open
                   state: "on"
           sequence:
             - service: timer.cancel
@@ -125,7 +124,6 @@
   mode: queued
   max: 10
   max_exceeded: silent
-
 
 # ----------------------------------------------------------
 # AUTOMATION 2: Auto-lock when timer finishes (1 hour unlocked)
@@ -195,7 +193,6 @@
   max: 2
   max_exceeded: silent
 
-
 # ----------------------------------------------------------
 # AUTOMATION 3: Alert when door is left open for 15 minutes
 # ----------------------------------------------------------
@@ -208,14 +205,14 @@
   trigger:
     - platform: state
       id: front_door_open
-      entity_id: binary_sensor.front_door_open_close_sensor_is_open_2
+      entity_id: binary_sensor.front_door_open_close_sensor_window_door_is_open
       to: "on"
       for:
         minutes: 15
 
     - platform: state
       id: back_door_open
-      entity_id: binary_sensor.back_door_open_close_sensor_is_open_2
+      entity_id: binary_sensor.back_door_open_close_sensor_window_door_is_open
       to: "on"
       for:
         minutes: 15
