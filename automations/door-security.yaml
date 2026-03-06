@@ -1,0 +1,246 @@
+###############################################################
+# Door Security Automations
+#
+# Entities:
+#   - lock.front_door_lock                                  : Front door lock
+#   - lock.back_door_lock                                   : Back door lock
+#   - binary_sensor.front_door_open_close_sensor_is_open_2 : Front door open/close sensor
+#   - binary_sensor.back_door_open_close_sensor_is_open_2  : Back door open/close sensor
+#
+# Helpers (see helpers/door_helpers.yaml):
+#   - timer.front_door_lock : 1-hour countdown, starts when front door is closed + unlocked
+#   - timer.back_door_lock  : 1-hour countdown, starts when back door is closed + unlocked
+#
+# Logic:
+#   - Timers use restore: true so remaining time survives HA restarts
+#   - Auto-locks a door when its timer finishes (1 hour closed + unlocked)
+#   - Notifies if the lock fails to engage after auto-lock attempt
+#   - Notifies if either door is left open for more than 15 minutes
+###############################################################
+
+
+# ----------------------------------------------------------
+# AUTOMATION 1: Manage lock timers
+# Starts/cancels timers based on door and lock state changes.
+# ----------------------------------------------------------
+- id: door_lock_timer_manage
+  alias: "Doors - Manage Lock Timers"
+  description: >
+    Starts the 1-hour lock timer when a door is closed and unlocked.
+    Cancels the timer when the door opens or the lock engages.
+    Timers use restore: true and resume correctly after HA restarts.
+
+  trigger:
+    - platform: state
+      id: front_lock_changed
+      entity_id: lock.front_door_lock
+
+    - platform: state
+      id: back_lock_changed
+      entity_id: lock.back_door_lock
+
+    - platform: state
+      id: front_door_changed
+      entity_id: binary_sensor.front_door_open_close_sensor_is_open_2
+
+    - platform: state
+      id: back_door_changed
+      entity_id: binary_sensor.back_door_open_close_sensor_is_open_2
+
+  action:
+    - choose:
+
+        # Front door: start timer if now closed + unlocked
+        - conditions:
+            - condition: trigger
+              id:
+                - front_lock_changed
+                - front_door_changed
+            - condition: state
+              entity_id: lock.front_door_lock
+              state: unlocked
+            - condition: state
+              entity_id: binary_sensor.front_door_open_close_sensor_is_open_2
+              state: "off"
+          sequence:
+            - service: timer.start
+              target:
+                entity_id: timer.front_door_lock
+
+        # Front door: cancel timer if door opened or lock engaged
+        - conditions:
+            - condition: trigger
+              id:
+                - front_lock_changed
+                - front_door_changed
+            - condition: or
+              conditions:
+                - condition: state
+                  entity_id: lock.front_door_lock
+                  state: locked
+                - condition: state
+                  entity_id: binary_sensor.front_door_open_close_sensor_is_open_2
+                  state: "on"
+          sequence:
+            - service: timer.cancel
+              target:
+                entity_id: timer.front_door_lock
+
+        # Back door: start timer if now closed + unlocked
+        - conditions:
+            - condition: trigger
+              id:
+                - back_lock_changed
+                - back_door_changed
+            - condition: state
+              entity_id: lock.back_door_lock
+              state: unlocked
+            - condition: state
+              entity_id: binary_sensor.back_door_open_close_sensor_is_open_2
+              state: "off"
+          sequence:
+            - service: timer.start
+              target:
+                entity_id: timer.back_door_lock
+
+        # Back door: cancel timer if door opened or lock engaged
+        - conditions:
+            - condition: trigger
+              id:
+                - back_lock_changed
+                - back_door_changed
+            - condition: or
+              conditions:
+                - condition: state
+                  entity_id: lock.back_door_lock
+                  state: locked
+                - condition: state
+                  entity_id: binary_sensor.back_door_open_close_sensor_is_open_2
+                  state: "on"
+          sequence:
+            - service: timer.cancel
+              target:
+                entity_id: timer.back_door_lock
+
+  mode: queued
+  max: 10
+  max_exceeded: silent
+
+
+# ----------------------------------------------------------
+# AUTOMATION 2: Auto-lock when timer finishes (1 hour unlocked)
+# ----------------------------------------------------------
+- id: door_auto_lock
+  alias: "Doors - Auto Lock After 1 Hour Unlocked"
+  description: >
+    Automatically locks the front or back door when its 1-hour timer
+    finishes. Notifies if the lock fails to engage.
+
+  trigger:
+    - platform: event
+      id: front_timer_finished
+      event_type: timer.finished
+      event_data:
+        entity_id: timer.front_door_lock
+
+    - platform: event
+      id: back_timer_finished
+      event_type: timer.finished
+      event_data:
+        entity_id: timer.back_door_lock
+
+  variables:
+    lock_entity: >
+      {% if trigger.id == 'front_timer_finished' %}
+        lock.front_door_lock
+      {% else %}
+        lock.back_door_lock
+      {% endif %}
+    door_name: >
+      {% if trigger.id == 'front_timer_finished' %}
+        Front Door
+      {% else %}
+        Back Door
+      {% endif %}
+
+  action:
+    - service: lock.lock
+      target:
+        entity_id: "{{ lock_entity | trim }}"
+
+    # Wait for lock to respond before checking state
+    - delay:
+        seconds: 5
+
+    # If lock did not engage, notify
+    - if:
+        - condition: template
+          value_template: "{{ not is_state(lock_entity | trim, 'locked') }}"
+      then:
+        - service: notify.mobile_app_pixel_8_pro
+          data:
+            title: "🔒 Lock Failed — {{ door_name | trim }}"
+            message: >
+              Could not lock the {{ door_name | trim }}.
+              The lock may be jammed or obstructed.
+              Current lock state: {{ states(lock_entity | trim) }}.
+              Please check the door manually.
+            data:
+              channel: "Door Alerts"
+              importance: high
+              ttl: 0
+              priority: high
+
+  mode: parallel
+  max: 2
+  max_exceeded: silent
+
+
+# ----------------------------------------------------------
+# AUTOMATION 3: Alert when door is left open for 15 minutes
+# ----------------------------------------------------------
+- id: door_open_too_long
+  alias: "Doors - Open for More Than 15 Minutes"
+  description: >
+    Sends a notification if the front or back door is left open
+    for more than 15 minutes.
+
+  trigger:
+    - platform: state
+      id: front_door_open
+      entity_id: binary_sensor.front_door_open_close_sensor_is_open_2
+      to: "on"
+      for:
+        minutes: 15
+
+    - platform: state
+      id: back_door_open
+      entity_id: binary_sensor.back_door_open_close_sensor_is_open_2
+      to: "on"
+      for:
+        minutes: 15
+
+  variables:
+    door_name: >
+      {% if trigger.id == 'front_door_open' %}
+        Front Door
+      {% else %}
+        Back Door
+      {% endif %}
+
+  action:
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "🚪 {{ door_name | trim }} Left Open"
+        message: >
+          The {{ door_name | trim }} has been open for more than 15 minutes.
+          Please check if it was left open accidentally.
+        data:
+          channel: "Door Alerts"
+          importance: high
+          ttl: 0
+          priority: high
+
+  mode: parallel
+  max: 2
+  max_exceeded: silent

@@ -1,0 +1,23 @@
+# timer/door_lock_timers.yaml
+#
+# Place this file in: <config>/timer/door_lock_timers.yaml
+#
+# In configuration.yaml, add (or update) the timer line to:
+#
+#   timer: !include_dir_merge_named timer/
+#
+# With restore: true, active timers resume their remaining time on HA restart.
+# Note: if the timer expires while HA is not running, timer.finished will not
+# fire — but this is an unlikely edge case for a 1-hour lock timer.
+
+front_door_lock:
+  name: "Front Door Lock Timer"
+  duration: "01:00:00"
+  restore: true
+  icon: mdi:door-closed-lock
+
+back_door_lock:
+  name: "Back Door Lock Timer"
+  duration: "01:00:00"
+  restore: true
+  icon: mdi:door-closed-lock

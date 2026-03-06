@@ -10,7 +10,8 @@
 #   - Alert triggers when GPM drops 15%+ below 80 GPM (i.e., <= 68 GPM)
 #     WHILE RPM remains >= 3,000 RPM
 #   - Condition must persist for 5 minutes before notifying
-#   - Re-notifies every 2 hours if the problem is not resolved
+#   - Re-notifies after 30 minutes if the problem is not resolved
+#   - Shuts off the pump after 1 hour if still clogged
 #   - Sends a clear notification when flow rate recovers
 ###############################################################
 
@@ -19,8 +20,8 @@
   description: >
     Single automation that monitors pool pump GPM and RPM.
     Alerts when flow drops 15%+ below normal while RPM stays high
-    (indicating clogged skimmers), re-notifies every 2 hours,
-    and confirms when the issue is resolved.
+    (indicating clogged skimmers), re-notifies after 30 minutes,
+    shuts off the pump after 1 hour, and confirms when the issue is resolved.
 
   trigger:
     # Fires when GPM drops into clogged range
@@ -41,7 +42,6 @@
 
   action:
     - choose:
-
         # ----------------------------------------------------------
         # CASE 1: GPM dropped — skimmers likely clogged
         # ----------------------------------------------------------
@@ -70,42 +70,62 @@
                   ttl: 0
                   priority: high
 
-            # Re-notify every 2 hours while still clogged
-            - repeat:
-                while:
-                  - condition: numeric_state
-                    entity_id: sensor.pool_vsf_gpm
-                    below: 68
-                  - condition: numeric_state
-                    entity_id: sensor.pool_vsf_rpm
-                    above: 2999
-                sequence:
-                  - delay:
-                      hours: 2
+            # Re-notify after 30 minutes if still clogged
+            - delay:
+                minutes: 30
 
-                  # Re-check after delay before sending reminder
-                  - condition: numeric_state
-                    entity_id: sensor.pool_vsf_gpm
-                    below: 68
-                  - condition: numeric_state
-                    entity_id: sensor.pool_vsf_rpm
-                    above: 2999
+            # Re-check after 30 min delay before sending reminder
+            - condition: numeric_state
+              entity_id: sensor.pool_vsf_gpm
+              below: 68
+            - condition: numeric_state
+              entity_id: sensor.pool_vsf_rpm
+              above: 2999
 
-                  - service: notify.mobile_app_pixel_8_pro
-                    data:
-                      title: "🏊 Pool Skimmer Still Clogged"
-                      message: >
-                        Reminder: Skimmers are still clogged!
-                        Current flow rate is
-                        {{ states('sensor.pool_vsf_gpm') | round(1) }} GPM
-                        (normal: ~80 GPM). Pump RPM is
-                        {{ states('sensor.pool_vsf_rpm') | round(0) }}.
-                        Please clean the skimmer baskets.
-                      data:
-                        channel: "Pool Alerts"
-                        importance: high
-                        ttl: 0
-                        priority: high
+            - service: notify.mobile_app_pixel_8_pro
+              data:
+                title: "🏊 Pool Skimmer Still Clogged"
+                message: >
+                  Reminder: Skimmers are still clogged!
+                  Current flow rate is
+                  {{ states('sensor.pool_vsf_gpm') | round(1) }} GPM
+                  (normal: ~80 GPM). Pump RPM is
+                  {{ states('sensor.pool_vsf_rpm') | round(0) }}.
+                  Please clean the skimmer baskets.
+                  The pump will be shut off in 30 minutes if not resolved.
+                data:
+                  channel: "Pool Alerts"
+                  importance: high
+                  ttl: 0
+                  priority: high
+
+            # Wait another 30 minutes (1 hour total) then shut off pump if still clogged
+            - delay:
+                minutes: 30
+
+            - condition: numeric_state
+              entity_id: sensor.pool_vsf_gpm
+              below: 68
+            - condition: numeric_state
+              entity_id: sensor.pool_vsf_rpm
+              above: 2999
+
+            - service: switch.turn_off
+              target:
+                entity_id: switch.pool_pump
+
+            - service: notify.mobile_app_pixel_8_pro
+              data:
+                title: "🏊 Pool Pump Shut Off"
+                message: >
+                  Pool pump has been shut off due to a persistent skimmer clog.
+                  Flow rate was {{ states('sensor.pool_vsf_gpm') | round(1) }} GPM
+                  for over 1 hour. Please clean the skimmer baskets and restart the pump.
+                data:
+                  channel: "Pool Alerts"
+                  importance: high
+                  ttl: 0
+                  priority: high
 
         # ----------------------------------------------------------
         # CASE 2: GPM recovered — skimmers are clear
