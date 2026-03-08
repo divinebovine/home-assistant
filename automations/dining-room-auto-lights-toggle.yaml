@@ -21,8 +21,6 @@
 ###############################################################
 
 alias: Dining Room Auto Lights Toggle
-labels:
-  - lighting
 description: "Manual override for auto-lights using dimmer paddle. Both up/down disable auto-lights temporarily, then re-enable after timer expires."
 triggers:
   - trigger: event

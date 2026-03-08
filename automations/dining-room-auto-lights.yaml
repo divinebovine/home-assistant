@@ -26,8 +26,6 @@
 ###############################################################
 
 alias: Dining Room Auto Lights
-labels:
-  - lighting
 description: "Motion-activated dining room lights with time-based brightness levels. Turns on at 100% (day), 60% (evening), or 10% (night), then auto-turns off after 30 minutes."
 triggers:
   - trigger: state
