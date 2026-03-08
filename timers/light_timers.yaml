@@ -1,0 +1,5 @@
+dining_room_lights_on_timer:
+  name: "Dining Room Lights On Timer"
+  duration: "00:30:00"
+  restore: true
+  icon: mdi:lightbulb-autos
