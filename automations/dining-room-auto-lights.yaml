@@ -16,7 +16,7 @@
 # Logic:
 #   - Motion activation with time-based brightness levels:
 #     * 07:00-23:00 (Day): 100% brightness
-#     * 23:00-00:00 (Evening): 60% brightnessss
+#     * 23:00-00:00 (Evening): 60% brightness
 #     * 00:00-07:00 (Night): 10% brightness
 #   - Always restarts 30-minute timer on motion detection
 #   - Adjusts brightness even if lights are already on
