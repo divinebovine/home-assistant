@@ -1,0 +1,15 @@
+# input_boolean/pool_helpers.yaml
+#
+# Place this file in: <config>/input_boolean/pool_helpers.yaml
+#
+# In configuration.yaml, add (or update) the input_boolean line to:
+#
+#   input_boolean: !include_dir_merge_named input_boolean/
+#
+# If you already have an existing input_boolean block or !include, move
+# those helpers into separate files inside the input_boolean/ folder —
+# one file per logical group works well.
+
+pool_skimmer_clogged:
+  name: "Pool Skimmer Clogged"
+  icon: mdi:pool

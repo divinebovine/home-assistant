@@ -5,6 +5,9 @@
 #   - sensor.pool_vsf_gpm   : Pool pump flow rate (GPM)
 #   - sensor.pool_vsf_rpm   : Pool pump motor speed (RPM)
 #
+# Helper required (create in HA under Settings > Helpers > Toggle):
+#   - input_boolean.pool_skimmer_clogged
+#
 # Logic:
 #   - Normal operating range: 3,000–3,450 RPM / ~80 GPM
 #   - Alert triggers when GPM drops 15%+ below 80 GPM (i.e., <= 68 GPM)
@@ -12,7 +15,8 @@
 #   - Condition must persist for 5 minutes before notifying
 #   - Re-notifies after 30 minutes if the problem is not resolved
 #   - Shuts off the pump after 1 hour if still clogged
-#   - Sends a clear notification when flow rate recovers
+#   - Sends a clear notification when flow rate recovers (only if a clog
+#     was previously detected — prevents false "restored" alerts on pump startup)
 ###############################################################
 
 - id: pool_skimmer_clog_monitor
@@ -54,6 +58,11 @@
               above: 2999
 
           sequence:
+            # Mark clog as active
+            - service: input_boolean.turn_on
+              target:
+                entity_id: input_boolean.pool_skimmer_clogged
+
             # Send initial clog alert
             - service: notify.mobile_app_pixel_8_pro
               data:
@@ -114,6 +123,11 @@
               target:
                 entity_id: switch.pool_pump
 
+            # Clear the clog flag (pump is off, no recovery notification needed)
+            - service: input_boolean.turn_off
+              target:
+                entity_id: input_boolean.pool_skimmer_clogged
+
             - service: notify.mobile_app_pixel_8_pro
               data:
                 title: "🏊 Pool Pump Shut Off"
@@ -133,12 +147,21 @@
         - conditions:
             - condition: trigger
               id: recovered
+            # Only notify if a clog was previously detected (prevents false alerts on pump startup)
+            - condition: state
+              entity_id: input_boolean.pool_skimmer_clogged
+              state: "on"
             # Confirm pump is running at normal RPM
             - condition: numeric_state
               entity_id: sensor.pool_vsf_rpm
               above: 2999
 
           sequence:
+            # Clear the clog flag
+            - service: input_boolean.turn_off
+              target:
+                entity_id: input_boolean.pool_skimmer_clogged
+
             - service: notify.mobile_app_pixel_8_pro
               data:
                 title: "✅ Pool Flow Rate Restored"
