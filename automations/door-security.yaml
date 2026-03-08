@@ -25,6 +25,8 @@
 # ----------------------------------------------------------
 - id: door_lock_timer_manage
   alias: "Doors - Manage Lock Timers"
+  labels:
+    - security
   description: >
     Starts the 1-hour lock timer when a door is closed and unlocked.
     Cancels the timer when the door opens or the lock engages.
@@ -130,6 +132,8 @@
 # ----------------------------------------------------------
 - id: door_auto_lock
   alias: "Doors - Auto Lock After 1 Hour Unlocked"
+  labels:
+    - security
   description: >
     Automatically locks the front or back door when its 1-hour timer
     finishes. Notifies if the lock fails to engage.
@@ -198,6 +202,8 @@
 # ----------------------------------------------------------
 - id: door_open_too_long
   alias: "Doors - Open for More Than 15 Minutes"
+  labels:
+    - security
   description: >
     Sends a notification if the front or back door is left open
     for more than 15 minutes.

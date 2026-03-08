@@ -47,6 +47,8 @@
 # ══════════════════════════════════════════════════════════════════════════════
 - alias: "Open Sprinkler - Irrigation Schedule"
   id: "open_sprinkler_irrigation_schedule"
+  labels:
+    - irrigation
   description: >
     Zones 1-4 and 6-8, 3 min each. Two cycles separated by a 1.5-hour break.
     Runs Tue/Sat at 6:00 AM Central. Restart-resilient via fixed time triggers.
@@ -181,6 +183,8 @@
 # ══════════════════════════════════════════════════════════════════════════════
 - alias: "Open Sprinkler - Daily ET Deficit Accumulator"
   id: "open_sprinkler_et_deficit_accumulator"
+  labels:
+    - irrigation
   description: >
     Runs at 8 PM daily. Estimates ET from NWS temperature and humidity,
     accumulates a rolling deficit. Credits rainfall against the deficit.
@@ -266,6 +270,8 @@
 # ══════════════════════════════════════════════════════════════════════════════
 - alias: "Open Sprinkler - Rain Credit on Heavy Rain"
   id: "open_sprinkler_rain_credit"
+  labels:
+    - irrigation
   description: >
     When NWS precipitation_last_24hr crosses 0.5 in, reset the ET deficit
     to 0 immediately. Prevents watering after significant rainfall.

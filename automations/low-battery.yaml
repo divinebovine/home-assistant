@@ -21,6 +21,8 @@
 # ----------------------------------------------------------
 - id: low_battery_alert
   alias: "Devices - Low Battery Alert"
+  labels:
+    - maintenance
   description: >
     Monitors battery levels for all battery-powered devices and sends alerts
     when batteries drop below 15%. Re-notifies daily until resolved.
@@ -74,6 +76,8 @@
 # ----------------------------------------------------------
 - id: low_battery_daily_reminder
   alias: "Devices - Daily Low Battery Reminder"
+  labels:
+    - maintenance
   description: >
     Daily reminder for battery-powered devices that still have low batteries
     (below 20%). Helps ensure battery replacements aren't forgotten.
@@ -135,6 +139,8 @@
 # ----------------------------------------------------------
 - id: battery_replaced_confirmation
   alias: "Devices - Battery Replaced Confirmation"
+  labels:
+    - maintenance
   description: >
     Sends a confirmation notification when a device battery level
     rises above 80%, indicating successful battery replacement.
@@ -180,6 +186,8 @@
 # ----------------------------------------------------------
 - id: weekly_battery_report
   alias: "Devices - Weekly Battery Report"
+  labels:
+    - maintenance
   description: >
     Weekly summary of all battery-powered device battery levels for proactive
     monitoring and maintenance planning.

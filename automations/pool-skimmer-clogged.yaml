@@ -21,6 +21,8 @@
 
 - id: pool_skimmer_clog_monitor
   alias: "Pool - Skimmer Clog Monitor"
+  labels:
+    - pool
   description: >
     Single automation that monitors pool pump GPM and RPM.
     Alerts when flow drops 15%+ below normal while RPM stays high

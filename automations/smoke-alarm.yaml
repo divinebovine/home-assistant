@@ -20,6 +20,8 @@
 # ----------------------------------------------------------
 - id: smoke_alarm_detection
   alias: "Safety - Smoke Alarm Detection"
+  labels:
+    - safety
   description: >
     Emergency response automation for smoke detection. Sends immediate
     critical alerts and continues escalating notifications until resolved.
@@ -164,6 +166,8 @@
 # ----------------------------------------------------------
 - id: smoke_alarm_daily_status_check
   alias: "Safety - Daily Smoke Alarm Status"
+  labels:
+    - safety
   description: >
     Daily status check to ensure smoke alarm monitoring system
     is operational and communicating properly.
