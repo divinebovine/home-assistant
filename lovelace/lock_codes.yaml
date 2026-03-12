@@ -1,0 +1,131 @@
+# Lock Code Manager — Lovelace Card
+#
+# HOW TO ADD THIS TO YOUR DASHBOARD:
+#   1. Open your Home Assistant dashboard
+#   2. Click the pencil (Edit) icon → Add Card → Manual
+#   3. Paste the YAML below (starting at "type: vertical-stack")
+#   4. Save
+#
+# This card is self-contained. No HACS or custom components required.
+# It shows all 6 code slots in a 2-column grid. Each slot has:
+#   - Name field
+#   - PIN field (masked)
+#   - Enabled toggle  (flips the code on/off on the hardware)
+#   - Notify toggle   (sends a push when this code unlocks a door)
+
+type: vertical-stack
+cards:
+
+  - type: markdown
+    content: |
+      ## 🔐 Lock Code Manager
+      Enter a **Name** and **PIN** for each slot, then toggle **Enabled** on to
+      write the code to both locks. Toggle **Notify** on to get a push notification
+      when that code is used.
+
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+
+      # ── Slot 1 ────────────────────────────────────────────────────────────────
+      - type: entities
+        title: "Slot 1"
+        show_header_toggle: false
+        entities:
+          - entity: input_text.lock_code_slot_1_name
+            name: Name
+            icon: mdi:account
+          - entity: input_text.lock_code_slot_1_pin
+            name: PIN
+            icon: mdi:numeric
+          - type: divider
+          - entity: input_boolean.lock_code_slot_1_enabled
+            name: Enabled
+          - entity: input_boolean.lock_code_slot_1_notify
+            name: Notify on Use
+
+      # ── Slot 2 ────────────────────────────────────────────────────────────────
+      - type: entities
+        title: "Slot 2"
+        show_header_toggle: false
+        entities:
+          - entity: input_text.lock_code_slot_2_name
+            name: Name
+            icon: mdi:account
+          - entity: input_text.lock_code_slot_2_pin
+            name: PIN
+            icon: mdi:numeric
+          - type: divider
+          - entity: input_boolean.lock_code_slot_2_enabled
+            name: Enabled
+          - entity: input_boolean.lock_code_slot_2_notify
+            name: Notify on Use
+
+      # ── Slot 3 ────────────────────────────────────────────────────────────────
+      - type: entities
+        title: "Slot 3"
+        show_header_toggle: false
+        entities:
+          - entity: input_text.lock_code_slot_3_name
+            name: Name
+            icon: mdi:account
+          - entity: input_text.lock_code_slot_3_pin
+            name: PIN
+            icon: mdi:numeric
+          - type: divider
+          - entity: input_boolean.lock_code_slot_3_enabled
+            name: Enabled
+          - entity: input_boolean.lock_code_slot_3_notify
+            name: Notify on Use
+
+      # ── Slot 4 ────────────────────────────────────────────────────────────────
+      - type: entities
+        title: "Slot 4"
+        show_header_toggle: false
+        entities:
+          - entity: input_text.lock_code_slot_4_name
+            name: Name
+            icon: mdi:account
+          - entity: input_text.lock_code_slot_4_pin
+            name: PIN
+            icon: mdi:numeric
+          - type: divider
+          - entity: input_boolean.lock_code_slot_4_enabled
+            name: Enabled
+          - entity: input_boolean.lock_code_slot_4_notify
+            name: Notify on Use
+
+      # ── Slot 5 ────────────────────────────────────────────────────────────────
+      - type: entities
+        title: "Slot 5"
+        show_header_toggle: false
+        entities:
+          - entity: input_text.lock_code_slot_5_name
+            name: Name
+            icon: mdi:account
+          - entity: input_text.lock_code_slot_5_pin
+            name: PIN
+            icon: mdi:numeric
+          - type: divider
+          - entity: input_boolean.lock_code_slot_5_enabled
+            name: Enabled
+          - entity: input_boolean.lock_code_slot_5_notify
+            name: Notify on Use
+
+      # ── Slot 6 ────────────────────────────────────────────────────────────────
+      - type: entities
+        title: "Slot 6"
+        show_header_toggle: false
+        entities:
+          - entity: input_text.lock_code_slot_6_name
+            name: Name
+            icon: mdi:account
+          - entity: input_text.lock_code_slot_6_pin
+            name: PIN
+            icon: mdi:numeric
+          - type: divider
+          - entity: input_boolean.lock_code_slot_6_enabled
+            name: Enabled
+          - entity: input_boolean.lock_code_slot_6_notify
+            name: Notify on Use
