@@ -1,0 +1,211 @@
+###############################################################
+# Lock Code Manager
+#
+# Manages up to 6 named entry codes on both door locks.
+# Codes are written to / cleared from the lock hardware automatically
+# when you toggle a slot on/off or change a PIN.
+#
+# SETUP — one-time steps before this automation will work:
+#
+#   1. HELPERS — add two new include lines to configuration.yaml:
+#        input_boolean: !include_dir_merge_named input_boolean/
+#        input_text:    !include_dir_merge_named input_text/
+#      (input_boolean line may already exist; input_text/ is new)
+#
+#   2. NODE IDs — the keypad-unlock notification needs the Z-Wave node_id
+#      for each lock. Find them at:
+#        Settings → Devices & Services → Z-Wave JS → your lock device
+#        The Node ID is shown on the device info page (a small integer, e.g. 5).
+#      Replace the two node_id: 0 placeholders in Automation 2 below.
+#
+#   3. USAGE
+#        a. Go to Settings → Helpers and find the "Lock Code Slot X" entries.
+#        b. Enter a Name (e.g. "Mom") and a PIN (4–8 digits) for a slot.
+#        c. Toggle "Slot X – Enabled" on → code is written to both locks.
+#        d. Toggle "Slot X – Notify on Use" on → you get a push notification
+#           each time that code unlocks a door.
+#        e. Toggle "Slot X – Enabled" off → code is cleared from both locks.
+#
+# ENTITIES:
+#   Locks:   lock.front_door_lock / lock.back_door_lock
+#   Per slot (X = 1–6):
+#     input_text.lock_code_slot_X_name    — person's name
+#     input_text.lock_code_slot_X_pin     — numeric PIN (masked)
+#     input_boolean.lock_code_slot_X_enabled — on = code active on hardware
+#     input_boolean.lock_code_slot_X_notify  — on = notify when used
+###############################################################
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AUTOMATION 1 — Sync code slots to lock hardware
+#
+# Triggers whenever a PIN changes or a slot is toggled on/off.
+# Writes the code to both locks when a slot is enabled + PIN is valid (≥4 digits).
+# Clears the code from both locks immediately when a slot is disabled.
+# ──────────────────────────────────────────────────────────────────────────────
+- alias: "Locks - Sync Code Slots to Hardware"
+  id: "locks_sync_code_slots"
+  description: >
+    Writes or clears Z-Wave user codes on both door locks when a code slot's
+    PIN or Enabled toggle changes. A code is only written when the slot is
+    enabled and the PIN is at least 4 digits. Disabling a slot immediately
+    clears it from the hardware.
+  mode: queued
+  max: 12
+  max_exceeded: silent
+
+  trigger:
+    # PIN value changed for any slot
+    - platform: state
+      id: pin_changed
+      entity_id:
+        - input_text.lock_code_slot_1_pin
+        - input_text.lock_code_slot_2_pin
+        - input_text.lock_code_slot_3_pin
+        - input_text.lock_code_slot_4_pin
+        - input_text.lock_code_slot_5_pin
+        - input_text.lock_code_slot_6_pin
+
+    # Slot was enabled
+    - platform: state
+      id: slot_enabled
+      entity_id:
+        - input_boolean.lock_code_slot_1_enabled
+        - input_boolean.lock_code_slot_2_enabled
+        - input_boolean.lock_code_slot_3_enabled
+        - input_boolean.lock_code_slot_4_enabled
+        - input_boolean.lock_code_slot_5_enabled
+        - input_boolean.lock_code_slot_6_enabled
+      to: "on"
+
+    # Slot was disabled
+    - platform: state
+      id: slot_disabled
+      entity_id:
+        - input_boolean.lock_code_slot_1_enabled
+        - input_boolean.lock_code_slot_2_enabled
+        - input_boolean.lock_code_slot_3_enabled
+        - input_boolean.lock_code_slot_4_enabled
+        - input_boolean.lock_code_slot_5_enabled
+        - input_boolean.lock_code_slot_6_enabled
+      to: "off"
+
+  variables:
+    # Extract the slot number from the triggering entity's name.
+    # e.g. "input_text.lock_code_slot_3_pin" → 3
+    slot: >
+      {{ trigger.entity_id.split('_slot_')[1].split('_')[0] | int }}
+
+    pin_entity: "{{ 'input_text.lock_code_slot_' ~ slot ~ '_pin' }}"
+    enabled_entity: "{{ 'input_boolean.lock_code_slot_' ~ slot ~ '_enabled' }}"
+
+    pin_value: "{{ states(pin_entity) | trim }}"
+    is_enabled: "{{ is_state(enabled_entity, 'on') }}"
+    # PIN is valid when the slot is enabled and the value is 4–8 digits
+    pin_valid: "{{ pin_value | length >= 4 and pin_value | length <= 8 }}"
+
+  action:
+    - choose:
+        # ── Disable: clear the code from both locks immediately ──────────────
+        - conditions:
+            - condition: template
+              value_template: "{{ trigger.id == 'slot_disabled' }}"
+          sequence:
+            - service: zwave_js.clear_lock_usercode
+              data:
+                code_slot: "{{ slot }}"
+              target:
+                entity_id:
+                  - lock.front_door_lock
+                  - lock.back_door_lock
+
+        # ── Enable or PIN change: write code if slot is on and PIN is valid ──
+        - conditions:
+            - condition: template
+              value_template: "{{ is_enabled and pin_valid }}"
+          sequence:
+            - service: zwave_js.set_lock_usercode
+              data:
+                code_slot: "{{ slot }}"
+                usercode: "{{ pin_value }}"
+              target:
+                entity_id:
+                  - lock.front_door_lock
+                  - lock.back_door_lock
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AUTOMATION 2 — Notify when a code is used to unlock a door
+#
+# Listens for Z-Wave keypad unlock events on each door.
+# Looks up the slot name from input_text and only notifies when the slot's
+# notify toggle is on.
+#
+# REQUIRED: replace the node_id placeholders below with the Z-Wave node IDs
+# for your front and back door locks.
+# Find them at: Settings → Devices & Services → Z-Wave JS → your lock device
+# The Node ID is shown on the device page (small integer, e.g. 5).
+# ──────────────────────────────────────────────────────────────────────────────
+- alias: "Locks - Notify on Keypad Unlock"
+  id: "locks_notify_keypad_unlock"
+  description: >
+    Sends a push notification when a door is unlocked via keypad code.
+    Only fires when the used slot's Notify toggle is on.
+    Requires node_id values to be filled in — see comments above.
+  mode: parallel
+  max: 4
+  max_exceeded: silent
+
+  trigger:
+    # Front door keypad unlock
+    # Replace 0 with the Z-Wave node ID of your front door lock.
+    - platform: event
+      id: front_door_keypad
+      event_type: zwave_js_notification
+      event_data:
+        node_id: 5
+        command_class_name: Notification
+        label: "Access Control"
+        event: 6 # 6 = Keypad unlock operation
+
+    # Back door keypad unlock
+    # Replace 0 with the Z-Wave node ID of your back door lock.
+    - platform: event
+      id: back_door_keypad
+      event_type: zwave_js_notification
+      event_data:
+        node_id: 258
+        command_class_name: Notification
+        label: "Access Control"
+        event: 6 # 6 = Keypad unlock operation
+
+  variables:
+    door_name: >
+      {{ 'Front Door' if trigger.id == 'front_door_keypad' else 'Back Door' }}
+
+    # Z-Wave userId is 1-indexed and matches the code slot number
+    slot: >
+      {{ trigger.event.data.parameters.userId | int(0) }}
+
+    name_entity: "{{ 'input_text.lock_code_slot_' ~ slot ~ '_name' }}"
+    notify_entity: "{{ 'input_boolean.lock_code_slot_' ~ slot ~ '_notify' }}"
+
+    user_name: >
+      {% set n = states(name_entity) | trim %}
+      {{ n if n | length > 0 else 'Code Slot ' ~ slot }}
+
+    should_notify: "{{ is_state(notify_entity, 'on') }}"
+
+  condition:
+    # slot 0 means the event had no userId — skip unknown events
+    - condition: template
+      value_template: "{{ should_notify and slot > 0 }}"
+
+  action:
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "🔓 {{ door_name }} Unlocked"
+        message: "{{ user_name }} unlocked the {{ door_name }} using the keypad."
+        data:
+          channel: "Door Alerts"
+          importance: high
+          ttl: 0
+          priority: high

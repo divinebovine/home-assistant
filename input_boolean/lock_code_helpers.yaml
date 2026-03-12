@@ -1,0 +1,66 @@
+# input_boolean/lock_code_helpers.yaml
+#
+# Place this file in: <config>/input_boolean/lock_code_helpers.yaml
+#
+# Ensure your configuration.yaml includes this directory:
+#   input_boolean: !include_dir_merge_named input_boolean/
+#
+# Two booleans per code slot:
+#   lock_code_slot_X_enabled — master on/off for the slot; toggling off immediately
+#                              clears the code from the lock hardware
+#   lock_code_slot_X_notify  — when on, sends a push notification each time this
+#                              slot's code is used to unlock a door
+
+# ── Slot 1 ───────────────────────────────────────────────────────────────────
+lock_code_slot_1_enabled:
+  name: "Lock Code Slot 1 - Enabled"
+  icon: mdi:lock-check
+
+lock_code_slot_1_notify:
+  name: "Lock Code Slot 1 - Notify on Use"
+  icon: mdi:bell-check
+
+# ── Slot 2 ───────────────────────────────────────────────────────────────────
+lock_code_slot_2_enabled:
+  name: "Lock Code Slot 2 - Enabled"
+  icon: mdi:lock-check
+
+lock_code_slot_2_notify:
+  name: "Lock Code Slot 2 - Notify on Use"
+  icon: mdi:bell-check
+
+# ── Slot 3 ───────────────────────────────────────────────────────────────────
+lock_code_slot_3_enabled:
+  name: "Lock Code Slot 3 - Enabled"
+  icon: mdi:lock-check
+
+lock_code_slot_3_notify:
+  name: "Lock Code Slot 3 - Notify on Use"
+  icon: mdi:bell-check
+
+# ── Slot 4 ───────────────────────────────────────────────────────────────────
+lock_code_slot_4_enabled:
+  name: "Lock Code Slot 4 - Enabled"
+  icon: mdi:lock-check
+
+lock_code_slot_4_notify:
+  name: "Lock Code Slot 4 - Notify on Use"
+  icon: mdi:bell-check
+
+# ── Slot 5 ───────────────────────────────────────────────────────────────────
+lock_code_slot_5_enabled:
+  name: "Lock Code Slot 5 - Enabled"
+  icon: mdi:lock-check
+
+lock_code_slot_5_notify:
+  name: "Lock Code Slot 5 - Notify on Use"
+  icon: mdi:bell-check
+
+# ── Slot 6 ───────────────────────────────────────────────────────────────────
+lock_code_slot_6_enabled:
+  name: "Lock Code Slot 6 - Enabled"
+  icon: mdi:lock-check
+
+lock_code_slot_6_notify:
+  name: "Lock Code Slot 6 - Notify on Use"
+  icon: mdi:bell-check

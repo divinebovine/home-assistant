@@ -1,0 +1,96 @@
+# input_text/lock_code_helpers.yaml
+#
+# Place this file in: <config>/input_text/lock_code_helpers.yaml
+#
+# This is a NEW helper type directory. Add this line to configuration.yaml:
+#   input_text: !include_dir_merge_named input_text/
+#
+# Two text helpers per code slot:
+#   lock_code_slot_X_name — human-readable label shown in notifications
+#                           (e.g., "Mom", "Dog Walker", "House Cleaner")
+#   lock_code_slot_X_pin  — the numeric PIN (4–8 digits); stored in password
+#                           mode so it is masked in the UI
+
+# ── Slot 1 ───────────────────────────────────────────────────────────────────
+lock_code_slot_1_name:
+  name: "Lock Code Slot 1 - Name"
+  icon: mdi:account
+  max: 30
+
+lock_code_slot_1_pin:
+  name: "Lock Code Slot 1 - PIN"
+  icon: mdi:numeric
+  min: 4
+  max: 8
+  pattern: "[0-9]*"
+  mode: password
+
+# ── Slot 2 ───────────────────────────────────────────────────────────────────
+lock_code_slot_2_name:
+  name: "Lock Code Slot 2 - Name"
+  icon: mdi:account
+  max: 30
+
+lock_code_slot_2_pin:
+  name: "Lock Code Slot 2 - PIN"
+  icon: mdi:numeric
+  min: 4
+  max: 8
+  pattern: "[0-9]*"
+  mode: password
+
+# ── Slot 3 ───────────────────────────────────────────────────────────────────
+lock_code_slot_3_name:
+  name: "Lock Code Slot 3 - Name"
+  icon: mdi:account
+  max: 30
+
+lock_code_slot_3_pin:
+  name: "Lock Code Slot 3 - PIN"
+  icon: mdi:numeric
+  min: 4
+  max: 8
+  pattern: "[0-9]*"
+  mode: password
+
+# ── Slot 4 ───────────────────────────────────────────────────────────────────
+lock_code_slot_4_name:
+  name: "Lock Code Slot 4 - Name"
+  icon: mdi:account
+  max: 30
+
+lock_code_slot_4_pin:
+  name: "Lock Code Slot 4 - PIN"
+  icon: mdi:numeric
+  min: 4
+  max: 8
+  pattern: "[0-9]*"
+  mode: password
+
+# ── Slot 5 ───────────────────────────────────────────────────────────────────
+lock_code_slot_5_name:
+  name: "Lock Code Slot 5 - Name"
+  icon: mdi:account
+  max: 30
+
+lock_code_slot_5_pin:
+  name: "Lock Code Slot 5 - PIN"
+  icon: mdi:numeric
+  min: 4
+  max: 8
+  pattern: "[0-9]*"
+  mode: password
+
+# ── Slot 6 ───────────────────────────────────────────────────────────────────
+lock_code_slot_6_name:
+  name: "Lock Code Slot 6 - Name"
+  icon: mdi:account
+  max: 30
+
+lock_code_slot_6_pin:
+  name: "Lock Code Slot 6 - PIN"
+  icon: mdi:numeric
+  min: 4
+  max: 8
+  pattern: "[0-9]*"
+  mode: password
