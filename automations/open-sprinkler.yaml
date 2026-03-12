@@ -24,8 +24,9 @@
 #      precipitation in the past 24 hours (attribute: precipitation_last_24hr
 #      on the NWS weather entity).
 #   2. ET DEFICIT SKIP — A daily automation (see below) accumulates a rolling
-#      water deficit using a simplified ET estimate based on NWS temperature
-#      and humidity. Watering is skipped when the deficit is below a threshold
+#      water deficit using the ASCE Standardized Penman-Monteith ET₀ equation
+#      (short reference / grass), as recommended by Texas A&M AgriLife and the
+#      TexasET network. Watering is skipped when the deficit is below a threshold
 #      (default: 0.20 in), meaning the lawn has enough water. After each
 #      watering run, the deficit is reset to 0.
 #
@@ -162,18 +163,24 @@
           data:
             run_seconds: 180
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # AUTOMATION 2 OF 3 — Daily ET deficit accumulator (runs at 8:00 PM)
 #
-# Estimates daily evapotranspiration (ET) using a simplified Hargreaves-style
-# formula based on NWS temperature and humidity, then adds it to the running
-# deficit. On days with significant rainfall, the deficit is reduced instead.
+# Estimates daily evapotranspiration using the ASCE Standardized Penman-
+# Monteith ET₀ equation (short reference / grass), as recommended by Texas
+# A&M AgriLife and the TexasET network for Texas conditions.
 #
-# Formula:
-#   ET_daily (inches) ≈ 0.0023 × (T_mean + 17.8) × √(T_max - T_min) × Ra
-#   where Ra (extraterrestrial radiation factor) is approximated from month.
-#   Simplified here to a temperature/humidity heuristic suitable for Texas.
+# Formula (ASCE Manual of Engineering Practice No. 70, 2005):
+#   ET₀ = (0.408·Δ·Rn + γ·[Cn/(T+273)]·u₂·(es−ea)) / (Δ + γ·(1 + Cd·u₂))
+#   Cn=900, Cd=0.34  (short reference / grass)
+#   Δ  = slope of saturation vapor pressure curve (kPa/°C)
+#   Rn = net radiation (MJ/m²/day); estimated via Hargreaves Rs from T-range
+#        since NWS does not supply solar radiation directly
+#   Ra = extraterrestrial radiation from monthly lookup table for 33°N (DFW)
+#   γ  = psychrometric constant at site elevation (kPa/°C)
+#   u₂ = wind speed at 2 m (converted from NWS 10 m via log-profile: ×0.748)
+#   es = mean saturation vapor pressure from Tmax and Tmin (kPa)
+#   ea = actual vapor pressure from RH (kPa)
 #
 # Deficit increases each day the lawn loses water to ET.
 # Deficit decreases when it rains (rain credited directly against deficit).
@@ -182,9 +189,11 @@
 - alias: "Open Sprinkler - Daily ET Deficit Accumulator"
   id: "open_sprinkler_et_deficit_accumulator"
   description: >
-    Runs at 8 PM daily. Estimates ET from NWS temperature and humidity,
-    accumulates a rolling deficit. Credits rainfall against the deficit.
-    Update 'weather.kads' to match your NWS weather entity.
+    Runs at 8 PM daily. Computes ET₀ via ASCE Standardized Penman-Monteith
+    (ASCE Manual 70, short reference/grass) using NWS temperature, humidity,
+    and wind speed. Tmax/Tmin from NWS daily forecast attribute. Ra from
+    monthly lookup table at 33°N. Accumulates a rolling water deficit;
+    credits rainfall. Update 'weather.kads' to match your NWS weather entity.
   mode: single
   trigger:
     - platform: time
@@ -193,39 +202,99 @@
     - variables:
         weather_entity: "weather.kads"
 
-        # Current temperature (°F) and humidity (%) from NWS
-        temp_f: >
-          {{ state_attr(weather_entity, 'temperature') | float(85) }}
-        humidity_pct: >
-          {{ state_attr(weather_entity, 'humidity') | float(50) }}
-
         # Rainfall today from NWS (inches)
         rain_today: >
           {{ state_attr(weather_entity, 'precipitation_last_24hr') | float(0) }}
 
-        # Simplified ET estimate (inches/day) for warm-season Texas turfgrass.
-        # Based on ASCE Penman-Monteith simplified for residential use:
-        #   - Higher ET on hot, dry, windy days
-        #   - Lower ET on cool, humid days
-        # Reference: Texas A&M AgriLife / TexasET network typical ranges
-        #   (0.10–0.30 in/day in summer, 0.05–0.15 in/day in spring/fall)
+        # ── ASCE Standardized Penman-Monteith ET₀ (short reference / grass) ──
+        # All intermediate values are computed inside this template block.
+        # Solar radiation Rs is estimated from the temperature range via the
+        # Hargreaves radiation formula (NWS does not supply Rs directly).
+        # Ra uses a monthly lookup table interpolated for latitude 33°N (DFW).
+        # Tmax/Tmin come from forecast[0] on the NWS weather entity; if the
+        # forecast attribute is unavailable, ±10/15 °F offsets are used.
+        # Wind speed is converted from 10 m (NWS) to 2 m via log-profile.
         et_estimate: >
-          {% set t = temp_f %}
-          {% set rh = humidity_pct %}
+          {# ── Site constants: DFW, TX — lat 33°N, elev ≈ 600 ft / 183 m ── #}
+          {% set elev_m = 183.0 %}
+          {# Euler's number — used in place of exp() which is not available #}
+          {% set e = 2.718281828 %}
+
+          {# ── Weather inputs from NWS ─────────────────────────────────── #}
+          {% set rh       = state_attr(weather_entity, 'humidity')    | float(50) %}
+          {% set wind_mph = state_attr(weather_entity, 'wind_speed')  | float(8)  %}
+          {% set t_f      = state_attr(weather_entity, 'temperature') | float(85) %}
+          {% set forecast = state_attr(weather_entity, 'forecast')                %}
+
+          {# Tmax / Tmin from today's NWS daily forecast (°F → °C) #}
+          {% set has_fc  = forecast is not none and forecast | length > 0 %}
+          {% set t_max_f = forecast[0].temperature | float(t_f + 10) if has_fc else (t_f + 10) %}
+          {% set t_min_f = forecast[0].templow     | float(t_f - 15) if has_fc else (t_f - 15) %}
+          {% set t_max   = (t_max_f - 32) / 1.8 %}
+          {% set t_min   = (t_min_f - 32) / 1.8 %}
+          {% set t_mean  = (t_max + t_min) / 2   %}
+
+          {# ── Extraterrestrial radiation Ra (MJ/m²/day) at 33°N ────────── #}
+          {# Interpolated from FAO-56 Table 2.6 for 30°N and 35°N.          #}
           {% set month = now().month %}
-          {# Seasonal radiation factor (Ra proxy by month for DFW latitude ~33°N) #}
-          {% set ra_factors = {
-            1: 0.55, 2: 0.65, 3: 0.80, 4: 0.90,
-            5: 1.00, 6: 1.05, 7: 1.05, 8: 1.00,
-            9: 0.90, 10: 0.75, 11: 0.60, 12: 0.50
+          {% set ra_table = {
+             1: 22.9,  2: 26.9,  3: 32.3,  4: 37.1,
+             5: 40.5,  6: 41.9,  7: 41.3,  8: 38.4,
+             9: 33.4, 10: 27.4, 11: 22.1, 12: 20.7
           } %}
-          {% set ra = ra_factors[month] %}
-          {# ET formula: temperature and vapor pressure deficit proxy #}
-          {# VPD proxy: higher temp + lower humidity = more ET #}
-          {% set vpd_factor = (1 - rh / 100) %}
-          {% set et = ((t - 32) / 1.8 * 0.0023 + 0.05) * ra * (0.5 + vpd_factor) %}
-          {# Clamp to reasonable daily range: 0.03 to 0.35 inches #}
-          {{ [0.03, [et, 0.35] | min] | max | round(3) }}
+          {% set ra = ra_table[month] %}
+
+          {# ── Solar radiation Rs via Hargreaves estimation ─────────────── #}
+          {# Rs = Krs × √(Tmax − Tmin) × Ra   (Krs = 0.17, interior/arid)  #}
+          {% set dt = [t_max - t_min, 0] | max %}
+          {% set rs = 0.17 * (dt ** 0.5) * ra %}
+
+          {# ── Clear-sky radiation Rso (MJ/m²/day) ─────────────────────── #}
+          {% set rso = (0.75 + 0.00002 * elev_m) * ra %}
+
+          {# ── Net shortwave radiation Rns (albedo α = 0.23 for grass) ──── #}
+          {% set rns = 0.77 * rs %}
+
+          {# ── Saturation and actual vapor pressure (kPa) ───────────────── #}
+          {% set es_max = 0.6108 * (e ** (17.27 * t_max / (t_max + 237.3))) %}
+          {% set es_min = 0.6108 * (e ** (17.27 * t_min / (t_min + 237.3))) %}
+          {% set es     = (es_max + es_min) / 2 %}
+          {% set ea     = es * rh / 100 %}
+
+          {# ── Net longwave radiation Rnl (Stefan-Boltzmann, MJ/m²/day) ─── #}
+          {# σ = 4.901×10⁻⁹ MJ/m²/K⁴/day                                   #}
+          {# Cloudiness function Rs/Rso clamped to [0.3, 1.0]               #}
+          {% set t_max_k = t_max + 273.16 %}
+          {% set t_min_k = t_min + 273.16 %}
+          {% set rs_rso  = [0.3, [(rs / rso if rso > 0 else 0.7), 1.0] | min] | max %}
+          {% set rnl = 0.000000004901
+                     * (t_max_k ** 4 + t_min_k ** 4) / 2
+                     * (0.34 - 0.14 * (ea ** 0.5))
+                     * (1.35 * rs_rso - 0.35) %}
+
+          {# ── Net radiation Rn (MJ/m²/day) ─────────────────────────────── #}
+          {% set rn = rns - rnl %}
+
+          {# ── Slope of saturation vapor pressure curve Δ (kPa/°C) ──────── #}
+          {% set es_tmean = 0.6108 * (e ** (17.27 * t_mean / (t_mean + 237.3))) %}
+          {% set delta    = 4098 * es_tmean / (t_mean + 237.3) ** 2 %}
+
+          {# ── Psychrometric constant γ (kPa/°C) at site elevation ──────── #}
+          {% set pressure = 101.3 * ((293 - 0.0065 * elev_m) / 293) ** 5.26 %}
+          {% set gamma    = 0.000665 * pressure %}
+
+          {# ── Wind at 2 m: mph → m/s, then 10 m → 2 m log-profile (×0.748) #}
+          {% set u2 = wind_mph * 0.44704 * 0.748 %}
+
+          {# ── ASCE PM ET₀ (mm/day): Cn=900, Cd=0.34 (short reference) ──── #}
+          {% set numerator   = 0.408 * delta * rn
+                             + gamma * (900 / (t_mean + 273)) * u2 * (es - ea) %}
+          {% set denominator = delta + gamma * (1 + 0.34 * u2) %}
+          {% set et_mm = numerator / denominator if denominator > 0 else 3.0 %}
+
+          {# Convert mm/day → in/day; clamp to [0.02, 0.50] in/day #}
+          {% set et_in = et_mm / 25.4 %}
+          {{ [0.02, [et_in, 0.50] | min] | max | round(3) }}
 
         # Current stored deficit
         current_deficit: >
@@ -247,7 +316,7 @@
       data:
         title: "Irrigation ET Update"
         message: >
-          ET today: {{ et_estimate }} in | Rain: {{ rain_today }} in |
+          ET₀ today (ASCE PM): {{ et_estimate }} in | Rain: {{ rain_today }} in |
           Deficit: {{ current_deficit }} → {{ new_deficit }} in
           {% if new_deficit >= 0.20 %}
           ✅ Will water next scheduled day.
@@ -255,7 +324,6 @@
           ⏭️ Will SKIP next scheduled watering (deficit below threshold).
           {% endif %}
         notification_id: "irrigation_et_update"
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AUTOMATION 3 OF 3 — Rain credit (immediate deficit reduction on heavy rain)
