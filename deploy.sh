@@ -16,7 +16,7 @@ CONFIG_DIR="/root/config"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKUP_DIR="$(mktemp -d)"
 
-DIRS=(automations input_boolean input_number timers blueprints)
+DIRS=(automations input_boolean input_number input_text timers blueprints)
 
 # ── 1. Back up existing config ────────────────────────────────────────────────
 echo "Backing up existing config to $BACKUP_DIR..."
@@ -46,14 +46,19 @@ restore_backup() {
 
 # ── 2. Copy new files ─────────────────────────────────────────────────────────
 echo ""
-echo "Copying config files to $CONFIG_DIR..."
+echo "Copying config files from $REPO_DIR to $CONFIG_DIR..."
 for dir in "${DIRS[@]}"; do
   src="$REPO_DIR/$dir"
   dst="$CONFIG_DIR/$dir"
   if [ -d "$src" ]; then
-    mkdir -p "$dst"
+    if [ ! -d "$dst" ]; then
+      mkdir -p "$dst"
+      echo "  + $dir (created)"
+    fi
     cp -r "$src/." "$dst/"
     echo "  ✓ $dir"
+  else
+    echo "  - $dir (not found in repo, skipped)"
   fi
 done
 
@@ -78,7 +83,7 @@ echo "Config check passed."
 # ── 4. Reload HA domains ──────────────────────────────────────────────────────
 echo ""
 echo "Reloading..."
-domains=(automation input_boolean input_number timer)
+domains=(automation input_boolean input_number input_text timer)
 for domain in "${domains[@]}"; do
   curl -sf \
     -X POST "$HA_URL/api/services/$domain/reload" \
