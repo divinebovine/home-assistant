@@ -4,8 +4,9 @@
 # Entities:
 #   - lock.front_door_lock                                  : Front door lock
 #   - lock.back_door_lock                                   : Back door lock
-#   - binary_sensor.front_door_open_close_sensor_window_door_is_open : Front door open/close sensor
-#   - binary_sensor.back_door_open_close_sensor_window_door_is_open  : Back door open/close sensor
+#   - binary_sensor.front_door_open_close_sensor_window_door_is_open  : Front door open/close sensor
+#   - binary_sensor.back_door_open_close_sensor_window_door_is_open   : Back door open/close sensor
+#   - binary_sensor.garage_door_open_close_sensor_window_door_is_open : Garage door open/close sensor
 
 #
 # Helpers (see helpers/door_helpers.yaml):
@@ -190,7 +191,7 @@
               priority: high
 
   mode: parallel
-  max: 2
+  max: 3
   max_exceeded: silent
 
 # ----------------------------------------------------------
@@ -217,12 +218,21 @@
       for:
         minutes: 15
 
+    - platform: state
+      id: garage_door_open
+      entity_id: binary_sensor.garage_door_open_close_sensor_window_door_is_open
+      to: "on"
+      for:
+        minutes: 15
+
   variables:
     door_name: >
       {% if trigger.id == 'front_door_open' %}
         Front Door
-      {% else %}
+      {% elif trigger.id == 'back_door_open' %}
         Back Door
+      {% else %}
+        Garage Door
       {% endif %}
 
   action:
@@ -239,5 +249,5 @@
           priority: high
 
   mode: parallel
-  max: 2
+  max: 3
   max_exceeded: silent
