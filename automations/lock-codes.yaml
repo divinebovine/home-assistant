@@ -92,16 +92,9 @@
   variables:
     # Extract the slot number from the triggering entity's name.
     # e.g. "input_text.lock_code_slot_3_pin" → 3
+    # Only slot is derived here — no cross-references between variables.
     slot: >
       {{ trigger.entity_id.split('_slot_')[1].split('_')[0] | int }}
-
-    pin_entity: "{{ 'input_text.lock_code_slot_' ~ slot ~ '_pin' }}"
-    enabled_entity: "{{ 'input_boolean.lock_code_slot_' ~ slot ~ '_enabled' }}"
-
-    pin_value: "{{ states(pin_entity) | trim }}"
-    is_enabled: "{{ is_state(enabled_entity, 'on') }}"
-    # PIN is valid when the slot is enabled and the value is 4–8 digits
-    pin_valid: "{{ pin_value | length >= 4 and pin_value | length <= 8 }}"
 
   action:
     - choose:
@@ -121,12 +114,16 @@
         # ── Enable or PIN change: write code if slot is on and PIN is valid ──
         - conditions:
             - condition: template
-              value_template: "{{ is_enabled and pin_valid }}"
+              value_template: >
+                {% set pin = states('input_text.lock_code_slot_' ~ slot ~ '_pin') | trim %}
+                {% set enabled = is_state('input_boolean.lock_code_slot_' ~ slot ~ '_enabled', 'on') %}
+                {{ enabled and pin | length >= 4 and pin | length <= 8 }}
           sequence:
             - service: zwave_js.set_lock_usercode
               data:
                 code_slot: "{{ slot }}"
-                usercode: "{{ pin_value }}"
+                usercode: >
+                  {{ states('input_text.lock_code_slot_' ~ slot ~ '_pin') | trim }}
               target:
                 entity_id:
                   - lock.front_door_lock
