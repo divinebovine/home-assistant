@@ -1,0 +1,22 @@
+# lovelace/dashboards.yaml
+#
+# Defines all YAML-managed custom dashboards.
+# Referenced from configuration.yaml as:
+#
+#   lovelace:
+#     mode: storage
+#     dashboards: !include lovelace/dashboards.yaml
+#
+# Adding a new dashboard:
+#   1. Create lovelace/<name>.yaml with a views: block
+#   2. Add an entry here
+#   3. Run deploy.sh, then restart HA once to register the new sidebar entry
+#   4. After that, card changes hot-reload with no restart needed
+
+lock-codes:
+  mode: yaml
+  filename: lovelace/lock_codes.yaml
+  title: Lock Codes
+  icon: mdi:lock
+  show_in_sidebar: true
+  require_admin: false

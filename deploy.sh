@@ -16,7 +16,7 @@ CONFIG_DIR="/root/config"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKUP_DIR="$(mktemp -d)"
 
-DIRS=(automations input_boolean input_number input_text timers blueprints)
+DIRS=(automations input_boolean input_number input_text timers blueprints lovelace)
 
 # ── 1. Back up existing config ────────────────────────────────────────────────
 echo "Backing up existing config to $BACKUP_DIR..."
