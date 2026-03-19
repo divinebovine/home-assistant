@@ -55,7 +55,8 @@ for dir in "${DIRS[@]}"; do
       mkdir -p "$dst"
       echo "  + $dir (created)"
     fi
-    cp -r "$src/." "$dst/"
+    rm -rf "$dst"
+    cp -r "$src" "$dst"
     echo "  ✓ $dir"
   else
     echo "  - $dir (not found in repo, skipped)"

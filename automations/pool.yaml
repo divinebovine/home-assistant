@@ -1,14 +1,15 @@
 ###############################################################
-# Pool Skimmer Clog Detection Automation
+# Pool Pump Automations
 #
 # Sensors used:
 #   - sensor.pool_vsf_gpm   : Pool pump flow rate (GPM)
 #   - sensor.pool_vsf_rpm   : Pool pump motor speed (RPM)
+#   - switch.pool_pump      : Pool pump on/off
 #
 # Helper required (create in HA under Settings > Helpers > Toggle):
 #   - input_boolean.pool_skimmer_clogged
 #
-# Logic:
+# Automation 1 — Skimmer Clog Monitor:
 #   - Normal operating range: 3,000–3,450 RPM / ~80 GPM
 #   - Alert triggers when GPM drops 15%+ below 80 GPM (i.e., <= 68 GPM)
 #     WHILE RPM remains >= 3,000 RPM
@@ -17,6 +18,11 @@
 #   - Shuts off the pump after 1 hour if still clogged
 #   - Sends a clear notification when flow rate recovers (only if a clog
 #     was previously detected — prevents false "restored" alerts on pump startup)
+#
+# Automation 2 — Low RPM Alert:
+#   - Alerts when pump is on but RPM drops below minimum (450 RPM)
+#   - Waits 2 minutes before alerting to avoid false triggers on startup
+#   - Sends a clear notification when RPM recovers
 ###############################################################
 
 - id: pool_skimmer_clog_monitor
@@ -169,6 +175,75 @@
                   Pool skimmers are clear! Flow rate is back to
                   {{ states('sensor.pool_vsf_gpm') | round(1) }} GPM.
                   Pump RPM: {{ states('sensor.pool_vsf_rpm') | round(0) }}.
+                data:
+                  channel: "Pool Alerts"
+
+  mode: restart
+  max_exceeded: silent
+
+# ----------------------------------------------------------
+# AUTOMATION 2: Alert when pump RPM drops below minimum
+# ----------------------------------------------------------
+- id: pool_pump_low_rpm
+  alias: "Pool - Low RPM Alert"
+  description: >
+    Notifies when the pool pump is on but RPM drops below the
+    minimum operating speed of 450 RPM. Waits 2 minutes before
+    alerting to avoid false triggers during pump startup.
+    Sends a clear notification when RPM recovers.
+
+  trigger:
+    - platform: numeric_state
+      id: low_rpm
+      entity_id: sensor.pool_vsf_rpm
+      below: 450
+      for:
+        minutes: 2
+
+    - platform: numeric_state
+      id: rpm_recovered
+      entity_id: sensor.pool_vsf_rpm
+      above: 450
+      for:
+        minutes: 2
+
+  action:
+    - choose:
+        - conditions:
+            - condition: trigger
+              id: low_rpm
+            - condition: state
+              entity_id: switch.pool_pump
+              state: "on"
+          sequence:
+            - service: notify.mobile_app_pixel_8_pro
+              data:
+                title: "🏊 Pool Pump Low RPM"
+                message: >
+                  Pool pump is running below minimum speed!
+                  Current RPM: {{ states('sensor.pool_vsf_rpm') | round(0) }}
+                  (minimum: 450 RPM).
+                  The pump may be struggling or malfunctioning.
+                  Please check the pump.
+                data:
+                  channel: "Pool Alerts"
+                  importance: high
+                  ttl: 0
+                  priority: high
+
+        - conditions:
+            - condition: trigger
+              id: rpm_recovered
+            - condition: state
+              entity_id: switch.pool_pump
+              state: "on"
+          sequence:
+            - service: notify.mobile_app_pixel_8_pro
+              data:
+                title: "✅ Pool Pump RPM Restored"
+                message: >
+                  Pool pump speed has recovered.
+                  Current RPM: {{ states('sensor.pool_vsf_rpm') | round(0) }}.
                 data:
                   channel: "Pool Alerts"
 
