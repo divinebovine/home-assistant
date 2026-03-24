@@ -1,62 +1,55 @@
 #!/usr/bin/env bash
-# deploy.sh — Copy HA config files and reload after a config check
+# deploy.sh — Push HA config files from laptop to HA machine and reload
 #
 # Usage:
 #   ./deploy.sh
 #
 # Requirements:
-#   HA_URL   — Home Assistant base URL (e.g. http://localhost:8123)
-#   HA_TOKEN — Long-lived access token from your HA profile
+#   HA_URL      — Home Assistant base URL (e.g. http://homeassistant.local:8123)
+#   HA_TOKEN    — Long-lived access token from your HA profile
+#   HA_SSH_HOST — Hostname or IP of the HA machine (e.g. homeassistant.local)
+#   HA_SSH_USER — SSH user (default: root)
+#   HA_SSH_PORT — SSH port (default: 22)
 
 set -euo pipefail
 
-HA_URL="${HA_URL:-http://localhost:8123}"
+HA_URL="${HA_URL:-http://homeassistant.local:8123}"
 HA_TOKEN="${HA_TOKEN:?HA_TOKEN environment variable is required}"
-CONFIG_DIR="/root/config"
+HA_SSH_HOST="${HA_SSH_HOST:?HA_SSH_HOST environment variable is required}"
+HA_SSH_USER="${HA_SSH_USER:-root}"
+HA_SSH_PORT="${HA_SSH_PORT:-22}"
+CONFIG_DIR="/config"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-BACKUP_DIR="$(mktemp -d)"
 
 DIRS=(automations input_boolean input_number input_text timers blueprints lovelace)
 
-# ── 1. Back up existing config ────────────────────────────────────────────────
-echo "Backing up existing config to $BACKUP_DIR..."
-for dir in "${DIRS[@]}"; do
-  src="$CONFIG_DIR/$dir"
-  if [ -d "$src" ]; then
-    cp -r "$src" "$BACKUP_DIR/$dir"
-    echo "  ✓ $dir"
-  fi
-done
+SSH_OPTS=(-p "$HA_SSH_PORT" -o StrictHostKeyChecking=no -o BatchMode=yes)
+RSYNC_OPTS=(-az --delete -e "ssh ${SSH_OPTS[*]}")
 
-restore_backup() {
-  echo ""
-  echo "Restoring backup..."
-  for dir in "${DIRS[@]}"; do
-    src="$BACKUP_DIR/$dir"
-    dst="$CONFIG_DIR/$dir"
-    if [ -d "$src" ]; then
-      rm -rf "$dst"
-      cp -r "$src" "$dst"
-      echo "  ✓ $dir"
-    fi
-  done
-  rm -rf "$BACKUP_DIR"
-  echo "Backup restored. No changes were applied."
-}
+# ── 1. Create a backup via SSH ───────────────────────────────────────────────
+echo "Creating backup (this may take a minute)..."
+backup_response=$(ssh "${SSH_OPTS[@]}" "${HA_SSH_USER}@${HA_SSH_HOST}" \
+  "ha backups new --name 'pre-deploy $(date '+%Y-%m-%d %H:%M')' --raw-json" || true)
 
-# ── 2. Copy new files ─────────────────────────────────────────────────────────
-echo ""
-echo "Copying config files from $REPO_DIR to $CONFIG_DIR..."
+backup_slug=$(echo "$backup_response" | grep -o '"slug":"[^"]*"' | cut -d'"' -f4 || true)
+if [ -z "$backup_slug" ]; then
+  echo "Backup FAILED or could not be verified — aborting deploy."
+  echo "Response: $backup_response"
+  exit 1
+fi
+echo "Backup complete (slug: $backup_slug)."
+
+# ── 2. Push files via rsync ───────────────────────────────────────────────────
+echo "Ensuring rsync is available on remote..."
+ssh "${SSH_OPTS[@]}" "${HA_SSH_USER}@${HA_SSH_HOST}" \
+  "which rsync > /dev/null 2>&1 || apk add rsync --no-cache -q"
+
+echo "Pushing config files to ${HA_SSH_USER}@${HA_SSH_HOST}:${CONFIG_DIR}..."
 for dir in "${DIRS[@]}"; do
   src="$REPO_DIR/$dir"
-  dst="$CONFIG_DIR/$dir"
+  dst="${HA_SSH_USER}@${HA_SSH_HOST}:${CONFIG_DIR}/${dir}"
   if [ -d "$src" ]; then
-    if [ ! -d "$dst" ]; then
-      mkdir -p "$dst"
-      echo "  + $dir (created)"
-    fi
-    rm -rf "$dst"
-    cp -r "$src" "$dst"
+    rsync "${RSYNC_OPTS[@]}" "$src/" "$dst"
     echo "  ✓ $dir"
   else
     echo "  - $dir (not found in repo, skipped)"
@@ -76,7 +69,7 @@ errors=$(echo "$response" | grep -o '"errors":[^,}]*' | cut -d: -f2-)
 
 if [ "$result" != "valid" ]; then
   echo "Config check FAILED: $errors"
-  restore_backup
+  echo "Files have already been pushed — fix the error and re-deploy, or restore from the HA backup."
   exit 1
 fi
 echo "Config check passed."
@@ -94,7 +87,5 @@ for domain in "${domains[@]}"; do
   echo "  ✓ $domain"
 done
 
-# ── 5. Clean up backup ────────────────────────────────────────────────────────
-rm -rf "$BACKUP_DIR"
 echo ""
 echo "Done."
