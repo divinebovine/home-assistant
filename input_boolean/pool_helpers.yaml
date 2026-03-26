@@ -13,3 +13,7 @@
 pool_skimmer_clogged:
   name: "Pool Skimmer Clogged"
   icon: mdi:pool
+
+pool_pump_low_rpm:
+  name: "Pool Pump Low RPM"
+  icon: mdi:speedometer-slow
