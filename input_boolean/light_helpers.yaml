@@ -1,0 +1,6 @@
+# input_boolean/light_helpers.yaml
+# Auto-lights enable/disable helpers for motion-controlled lights.
+
+office_auto_lights:
+  name: "Office Auto Lights"
+  icon: mdi:lightbulb-auto

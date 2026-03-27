@@ -1,0 +1,144 @@
+###############################################################
+# Office Auto Lights
+#
+# Hardware:
+#   - Zooz ZEN30 800LR (ceiling fan light paddle dimmer)
+#   - Office Q-Sensor for motion detection
+#
+# Monitored Entities:
+#   - binary_sensor.office_q_sensor_motion_detection : Motion detection trigger
+#   - input_boolean.office_auto_lights               : Enable/disable switch
+#   - timer.office_lights_on_timer                   : 30-minute countdown timer
+#   - light.office_ceiling_fan_light                 : Target light entity
+#
+# Logic:
+#   - Motion activation with time-based brightness levels:
+#     * 07:00-23:00 (Day): 100% brightness
+#     * 23:00-00:00 (Evening): 60% brightness
+#     * 00:00-07:00 (Night): 10% brightness
+#   - Always restarts 30-minute timer on motion detection
+#   - Adjusts brightness even if lights are already on
+#   - Auto-turns off when timer expires
+#   - Startup logic ensures lights are off if timer is idle
+#   - Manual override via input_boolean prevents activation
+###############################################################
+
+alias: Office Auto Lights
+description: "Motion-activated office lights with time-based brightness levels. Turns on at 100% (day), 60% (evening), or 10% (night), then auto-turns off after 30 minutes."
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.office_q_sensor_motion_detection
+    from: "off"
+    to: "on"
+    id: Office Motion On
+  - trigger: state
+    entity_id: timer.office_lights_on_timer
+    from: active
+    to: idle
+    id: Timer
+  - trigger: homeassistant
+    event: start
+    id: Startup
+conditions: []
+actions:
+  - choose:
+      # Day: 07:00–23:00 — 100% brightness
+      - conditions:
+          - condition: time
+            after: "07:00:00"
+            before: "23:00:00"
+          - condition: state
+            entity_id: input_boolean.office_auto_lights
+            state: "on"
+          - condition: trigger
+            id: Office Motion On
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id: light.office_ceiling_fan_light
+            data:
+              transition: 2
+              brightness_pct: 100
+          - action: timer.start
+            target:
+              entity_id: timer.office_lights_on_timer
+            data:
+              duration: "00:30:00"
+
+      # Evening: 23:00–00:00 — 60% brightness
+      - conditions:
+          - condition: time
+            after: "23:00:00"
+            before: "00:00:00"
+          - condition: state
+            entity_id: input_boolean.office_auto_lights
+            state: "on"
+          - condition: trigger
+            id: Office Motion On
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id: light.office_ceiling_fan_light
+            data:
+              transition: 2
+              brightness_pct: 60
+          - action: timer.start
+            target:
+              entity_id: timer.office_lights_on_timer
+            data:
+              duration: "00:30:00"
+
+      # Night: 00:00–07:00 — 10% brightness
+      - conditions:
+          - condition: time
+            after: "00:00:00"
+            before: "07:00:00"
+          - condition: state
+            entity_id: input_boolean.office_auto_lights
+            state: "on"
+          - condition: trigger
+            id: Office Motion On
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id: light.office_ceiling_fan_light
+            data:
+              transition: 2
+              brightness_pct: 10
+          - action: timer.start
+            target:
+              entity_id: timer.office_lights_on_timer
+            data:
+              duration: "00:30:00"
+
+      # Timer expired — turn off lights
+      - conditions:
+          - condition: trigger
+            id: Timer
+          - condition: state
+            entity_id: automation.office_auto_lights
+            state: "on"
+        sequence:
+          - action: light.turn_off
+            target:
+              entity_id: light.office_ceiling_fan_light
+            data:
+              transition: 2
+
+      # Startup — turn off lights if timer is idle
+      - conditions:
+          - condition: trigger
+            id: Startup
+          - condition: state
+            entity_id: automation.office_auto_lights
+            state: "on"
+          - condition: state
+            entity_id: timer.office_lights_on_timer
+            state: idle
+        sequence:
+          - action: light.turn_off
+            target:
+              entity_id: light.office_ceiling_fan_light
+            data:
+              transition: 2
+mode: restart
