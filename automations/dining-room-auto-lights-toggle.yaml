@@ -20,61 +20,61 @@
 #   - Provides manual override of motion-activated lighting
 ###############################################################
 
-alias: Dining Room Auto Lights Toggle
-description: "Manual override for auto-lights using dimmer paddle. Both up/down disable auto-lights temporarily, then re-enable after timer expires."
-triggers:
-  - trigger: event
-    event_type: zwave_js_value_notification
-    event_data:
-      entity_id: event.dining_room_dimmer_scene_001
-    id: Paddle Up
-  - trigger: event
-    event_type: zwave_js_value_notification
-    event_data:
-      entity_id: event.dining_room_dimmer_scene_002
-    id: Paddle Down
-  - trigger: state
-    entity_id: timer.dining_room_auto_lights_off_timer
-    from: active
-    to: idle
-    id: Timer
-  - trigger: homeassistant
-    event: start
-    id: Home Assistant Start
-actions:
-  - choose:
-      - conditions:
-          - condition: trigger
-            id:
-              - Paddle Up
-              - Paddle Down
-        sequence:
-          - action: input_boolean.turn_off
-            target:
+- id: dining_room_auto_lights_toggle
+  alias: Dining Room Auto Lights Toggle
+  description: "Manual override for auto-lights using dimmer paddle. Both up/down disable auto-lights temporarily, then re-enable after timer expires."
+  triggers:
+    - trigger: event
+      event_type: zwave_js_value_notification
+      event_data:
+        entity_id: event.dining_room_dimmer_scene_001
+      id: Paddle Up
+    - trigger: event
+      event_type: zwave_js_value_notification
+      event_data:
+        entity_id: event.dining_room_dimmer_scene_002
+      id: Paddle Down
+    - trigger: state
+      entity_id: timer.dining_room_auto_lights_off_timer
+      from: active
+      to: idle
+      id: Timer
+    - trigger: homeassistant
+      event: start
+      id: Home Assistant Start
+  actions:
+    - choose:
+        - conditions:
+            - condition: trigger
+              id:
+                - Paddle Up
+                - Paddle Down
+          sequence:
+            - action: input_boolean.turn_off
+              target:
+                entity_id: input_boolean.dining_room_auto_lights
+            - action: timer.start
+              target:
+                entity_id: timer.dining_room_auto_lights_off_timer
+        - conditions:
+            - condition: trigger
+              id:
+                - Timer
+          sequence:
+            - action: input_boolean.turn_on
+              target:
+                entity_id: input_boolean.dining_room_auto_lights
+        - conditions:
+            - condition: trigger
+              id: Home Assistant Start
+            - condition: state
               entity_id: input_boolean.dining_room_auto_lights
-          - action: timer.start
-            target:
+              state: "off"
+            - condition: state
               entity_id: timer.dining_room_auto_lights_off_timer
-      - conditions:
-          - condition: trigger
-            id:
-              - Timer
-        sequence:
-          - action: input_boolean.turn_on
-            target:
-              entity_id: input_boolean.dining_room_auto_lights
-      - conditions:
-          - condition: trigger
-            id:
-              - Home Assistant Start
-          - condition: state
-            entity_id: input_boolean.dining_room_auto_lights
-            state: "off"
-          - condition: state
-            entity_id: timer.dining_room_auto_lights_off_timer
-            state: idle
-        sequence:
-          - action: input_boolean.turn_on
-            target:
-              entity_id: input_boolean.dining_room_auto_lights
-mode: single
+              state: idle
+          sequence:
+            - action: input_boolean.turn_on
+              target:
+                entity_id: input_boolean.dining_room_auto_lights
+  mode: single
