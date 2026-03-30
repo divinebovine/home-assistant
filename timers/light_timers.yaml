@@ -4,6 +4,12 @@ dining_room_lights_on_timer:
   restore: true
   icon: mdi:lightbulb-auto
 
+dining_room_auto_lights_off_timer:
+  name: "Dining Room Auto Lights Off Timer"
+  duration: "04:00:00"
+  restore: true
+  icon: mdi:lightbulb-off
+
 office_lights_on_timer:
   name: "Office Lights On Timer"
   duration: "00:30:00"
@@ -12,6 +18,6 @@ office_lights_on_timer:
 
 office_auto_lights_off_timer:
   name: "Office Auto Lights Off Timer"
-  duration: "01:00:00"
+  duration: "04:00:00"
   restore: true
   icon: mdi:lightbulb-off
