@@ -108,7 +108,7 @@
                 method_name: stopLevelChange
                 parameters: []
 
-        # Button 3 press — turn off
+        # Button 3 press — turn off immediately, overriding the dimmer's ramp rate
         - conditions:
             - condition: trigger
               id: button_3_press
@@ -117,7 +117,7 @@
               target:
                 entity_id: light.kitchen_under_cabinet_dimmer
               data:
-                transition: 1
+                transition: 0
 
         # Button 3 hold — native Z-Wave ramp down; dimmer handles smooth transition
         - conditions:
