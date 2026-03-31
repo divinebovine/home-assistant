@@ -7,8 +7,7 @@
 #
 # Entities:
 #   - light.kitchen_under_cabinet_dimmer          : Under cabinet light
-#   - event.kitchen_scene_controller_scene_001    : Button 1 scene events
-#   - event.kitchen_scene_controller_scene_003    : Button 3 scene events
+#   - node_id 262 (Kitchen Scene Controller)      : ZEN35 scene controller
 #
 # Button Behavior:
 #   - Button 1 press      : Set to 100% brightness
@@ -26,37 +25,43 @@
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        entity_id: event.kitchen_scene_controller_scene_001
+        node_id: 262
+        label: "Scene 001"
         value: KeyPressed
       id: button_1_press
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        entity_id: event.kitchen_scene_controller_scene_001
+        node_id: 262
+        label: "Scene 001"
         value: KeyHeldDown
       id: button_1_hold
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        entity_id: event.kitchen_scene_controller_scene_001
+        node_id: 262
+        label: "Scene 001"
         value: KeyReleased
       id: button_1_release
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        entity_id: event.kitchen_scene_controller_scene_003
+        node_id: 262
+        label: "Scene 003"
         value: KeyPressed
       id: button_3_press
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        entity_id: event.kitchen_scene_controller_scene_003
+        node_id: 262
+        label: "Scene 003"
         value: KeyHeldDown
       id: button_3_hold
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        entity_id: event.kitchen_scene_controller_scene_003
+        node_id: 262
+        label: "Scene 003"
         value: KeyReleased
       id: button_3_release
 
@@ -135,6 +140,5 @@
                 brightness: "{{ state_attr('light.kitchen_under_cabinet_dimmer', 'brightness') | int(1) }}"
                 transition: 0
 
-  mode: queued
-  max: 6
+  mode: single
   max_exceeded: silent
