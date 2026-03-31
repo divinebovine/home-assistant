@@ -11,11 +11,11 @@
 #
 # Button Behavior:
 #   - Button 1 press      : Set to 100% brightness
-#   - Button 1 hold       : Step up brightness 10% per 500ms until 100% or released
-#   - Button 1 release    : Stop at current brightness
+#   - Button 1 hold       : Native Z-Wave ramp up (smooth, dimmer-controlled)
+#   - Button 1 release    : Stop ramp at current brightness
 #   - Button 3 press      : Turn off
-#   - Button 3 hold       : Step down brightness 10% per 500ms until off or released
-#   - Button 3 release    : Stop at current brightness
+#   - Button 3 hold       : Native Z-Wave ramp down (smooth, dimmer-controlled)
+#   - Button 3 release    : Stop ramp at current brightness
 ###############################################################
 
 - id: kitchen_under_cabinet_lights_control
@@ -79,23 +79,34 @@
                 brightness_pct: 100
                 transition: 1
 
-        # Button 1 hold — step up 10% every 500ms until 100% or released.
-        # mode: restart cancels this loop the moment KeyReleased fires.
+        # Button 1 hold — native Z-Wave ramp up; dimmer handles smooth transition
         - conditions:
             - condition: trigger
               id: button_1_hold
           sequence:
-            - repeat:
-                count: 10
-                sequence:
-                  - action: light.turn_on
-                    target:
-                      entity_id: light.kitchen_under_cabinet_dimmer
-                    data:
-                      brightness_step_pct: 10
-                      transition: 0.4
-                  - delay:
-                      milliseconds: 500
+            - action: zwave_js.invoke_cc_api
+              data:
+                entity_id: light.kitchen_under_cabinet_dimmer
+                command_class: 38
+                endpoint: 0
+                method_name: startLevelChange
+                parameters:
+                  - direction: up
+                    ignoreStartLevel: true
+                    startLevel: 0
+
+        # Button 1 release — stop ramp at current level
+        - conditions:
+            - condition: trigger
+              id: button_1_release
+          sequence:
+            - action: zwave_js.invoke_cc_api
+              data:
+                entity_id: light.kitchen_under_cabinet_dimmer
+                command_class: 38
+                endpoint: 0
+                method_name: stopLevelChange
+                parameters: []
 
         # Button 3 press — turn off
         - conditions:
@@ -108,44 +119,35 @@
               data:
                 transition: 1
 
-        # Button 3 hold — step down 10% every 500ms until off or released.
-        # mode: restart cancels this loop the moment KeyReleased fires.
+        # Button 3 hold — native Z-Wave ramp down; dimmer handles smooth transition
         - conditions:
             - condition: trigger
               id: button_3_hold
           sequence:
-            - repeat:
-                count: 10
-                sequence:
-                  - choose:
-                      # At minimum brightness — turn off and stop
-                      - conditions:
-                          - condition: template
-                            value_template: >
-                              {{ state_attr('light.kitchen_under_cabinet_dimmer', 'brightness') | int(255) <= 26 }}
-                        sequence:
-                          - action: light.turn_off
-                            target:
-                              entity_id: light.kitchen_under_cabinet_dimmer
-                          - stop: "Light reached minimum, turning off"
-                    default:
-                      - action: light.turn_on
-                        target:
-                          entity_id: light.kitchen_under_cabinet_dimmer
-                        data:
-                          brightness_step_pct: -10
-                          transition: 0.4
-                  - delay:
-                      milliseconds: 500
+            - action: zwave_js.invoke_cc_api
+              data:
+                entity_id: light.kitchen_under_cabinet_dimmer
+                command_class: 38
+                endpoint: 0
+                method_name: startLevelChange
+                parameters:
+                  - direction: down
+                    ignoreStartLevel: true
+                    startLevel: 99
 
-        # Button 1/3 release — loop is already cancelled by mode: restart.
-        # No action needed; light remains at current level.
+        # Button 3 release — stop ramp at current level
         - conditions:
             - condition: trigger
-              id:
-                - button_1_release
-                - button_3_release
-          sequence: []
+              id: button_3_release
+          sequence:
+            - action: zwave_js.invoke_cc_api
+              data:
+                entity_id: light.kitchen_under_cabinet_dimmer
+                command_class: 38
+                endpoint: 0
+                method_name: stopLevelChange
+                parameters: []
 
-  mode: restart
+  mode: queued
+  max: 4
   max_exceeded: silent
