@@ -1,0 +1,140 @@
+###############################################################
+# Kitchen Under Cabinet Lights Control
+#
+# Hardware:
+#   - Zooz ZEN56 RGBW Dimmer (Kitchen Under Cabinet Dimmer)
+#   - Zooz ZEN35 Scene Controller (Kitchen Scene Controller)
+#
+# Entities:
+#   - light.kitchen_under_cabinet_dimmer          : Under cabinet light
+#   - event.kitchen_scene_controller_scene_001    : Button 1 scene events
+#   - event.kitchen_scene_controller_scene_003    : Button 3 scene events
+#
+# Button Behavior:
+#   - Button 1 press      : Set to 100% brightness
+#   - Button 1 hold       : Ramp up brightness to 100% over 5 seconds
+#   - Button 1 release    : Freeze brightness at current level
+#   - Button 3 press      : Turn off
+#   - Button 3 hold       : Fade to off over 5 seconds
+#   - Button 3 release    : Freeze brightness at current level (if still on)
+###############################################################
+
+- id: kitchen_under_cabinet_lights_control
+  alias: Kitchen - Under Cabinet Lights Control
+  description: "Controls under cabinet lights via ZEN35 scene controller. Button 1 raises brightness, button 3 lowers to off."
+  triggers:
+    - trigger: event
+      event_type: zwave_js_value_notification
+      event_data:
+        entity_id: event.kitchen_scene_controller_scene_001
+        value: KeyPressed
+      id: button_1_press
+    - trigger: event
+      event_type: zwave_js_value_notification
+      event_data:
+        entity_id: event.kitchen_scene_controller_scene_001
+        value: KeyHeldDown
+      id: button_1_hold
+    - trigger: event
+      event_type: zwave_js_value_notification
+      event_data:
+        entity_id: event.kitchen_scene_controller_scene_001
+        value: KeyReleased
+      id: button_1_release
+    - trigger: event
+      event_type: zwave_js_value_notification
+      event_data:
+        entity_id: event.kitchen_scene_controller_scene_003
+        value: KeyPressed
+      id: button_3_press
+    - trigger: event
+      event_type: zwave_js_value_notification
+      event_data:
+        entity_id: event.kitchen_scene_controller_scene_003
+        value: KeyHeldDown
+      id: button_3_hold
+    - trigger: event
+      event_type: zwave_js_value_notification
+      event_data:
+        entity_id: event.kitchen_scene_controller_scene_003
+        value: KeyReleased
+      id: button_3_release
+
+  actions:
+    - choose:
+        # Button 1 press — jump to full brightness
+        - conditions:
+            - condition: trigger
+              id: button_1_press
+          sequence:
+            - action: light.turn_on
+              target:
+                entity_id: light.kitchen_under_cabinet_dimmer
+              data:
+                brightness_pct: 100
+                transition: 1
+
+        # Button 1 hold — ramp up to full brightness over 5 seconds
+        - conditions:
+            - condition: trigger
+              id: button_1_hold
+          sequence:
+            - action: light.turn_on
+              target:
+                entity_id: light.kitchen_under_cabinet_dimmer
+              data:
+                brightness_pct: 100
+                transition: 5
+
+        # Button 1 release — freeze at current brightness
+        - conditions:
+            - condition: trigger
+              id: button_1_release
+          sequence:
+            - action: light.turn_on
+              target:
+                entity_id: light.kitchen_under_cabinet_dimmer
+              data:
+                brightness: "{{ state_attr('light.kitchen_under_cabinet_dimmer', 'brightness') | int(255) }}"
+                transition: 0
+
+        # Button 3 press — turn off immediately
+        - conditions:
+            - condition: trigger
+              id: button_3_press
+          sequence:
+            - action: light.turn_off
+              target:
+                entity_id: light.kitchen_under_cabinet_dimmer
+              data:
+                transition: 1
+
+        # Button 3 hold — fade to off over 2 seconds
+        - conditions:
+            - condition: trigger
+              id: button_3_hold
+          sequence:
+            - action: light.turn_off
+              target:
+                entity_id: light.kitchen_under_cabinet_dimmer
+              data:
+                transition: 2
+
+        # Button 3 release — freeze at current brightness if still on
+        - conditions:
+            - condition: trigger
+              id: button_3_release
+            - condition: state
+              entity_id: light.kitchen_under_cabinet_dimmer
+              state: "on"
+          sequence:
+            - action: light.turn_on
+              target:
+                entity_id: light.kitchen_under_cabinet_dimmer
+              data:
+                brightness: "{{ state_attr('light.kitchen_under_cabinet_dimmer', 'brightness') | int(1) }}"
+                transition: 0
+
+  mode: queued
+  max: 6
+  max_exceeded: silent
