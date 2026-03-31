@@ -11,11 +11,11 @@
 #
 # Button Behavior:
 #   - Button 1 press      : Set to 100% brightness
-#   - Button 1 hold       : Ramp up brightness to 100% over 5 seconds
-#   - Button 1 release    : Freeze brightness at current level
+#   - Button 1 hold       : Step up brightness 10% per 500ms until 100% or released
+#   - Button 1 release    : Stop at current brightness
 #   - Button 3 press      : Turn off
-#   - Button 3 hold       : Fade to off over 5 seconds
-#   - Button 3 release    : Freeze brightness at current level (if still on)
+#   - Button 3 hold       : Step down brightness 10% per 500ms until off or released
+#   - Button 3 release    : Stop at current brightness
 ###############################################################
 
 - id: kitchen_under_cabinet_lights_control
@@ -79,31 +79,25 @@
                 brightness_pct: 100
                 transition: 1
 
-        # Button 1 hold — ramp up to full brightness over 5 seconds
+        # Button 1 hold — step up 10% every 500ms until 100% or released.
+        # mode: restart cancels this loop the moment KeyReleased fires.
         - conditions:
             - condition: trigger
               id: button_1_hold
           sequence:
-            - action: light.turn_on
-              target:
-                entity_id: light.kitchen_under_cabinet_dimmer
-              data:
-                brightness_pct: 100
-                transition: 5
+            - repeat:
+                count: 10
+                sequence:
+                  - action: light.turn_on
+                    target:
+                      entity_id: light.kitchen_under_cabinet_dimmer
+                    data:
+                      brightness_step_pct: 10
+                      transition: 0.4
+                  - delay:
+                      milliseconds: 500
 
-        # Button 1 release — freeze at current brightness
-        - conditions:
-            - condition: trigger
-              id: button_1_release
-          sequence:
-            - action: light.turn_on
-              target:
-                entity_id: light.kitchen_under_cabinet_dimmer
-              data:
-                brightness: "{{ state_attr('light.kitchen_under_cabinet_dimmer', 'brightness') | int(255) }}"
-                transition: 0
-
-        # Button 3 press — turn off immediately
+        # Button 3 press — turn off
         - conditions:
             - condition: trigger
               id: button_3_press
@@ -114,31 +108,44 @@
               data:
                 transition: 1
 
-        # Button 3 hold — fade to off over 2 seconds
+        # Button 3 hold — step down 10% every 500ms until off or released.
+        # mode: restart cancels this loop the moment KeyReleased fires.
         - conditions:
             - condition: trigger
               id: button_3_hold
           sequence:
-            - action: light.turn_off
-              target:
-                entity_id: light.kitchen_under_cabinet_dimmer
-              data:
-                transition: 2
+            - repeat:
+                count: 10
+                sequence:
+                  - choose:
+                      # At minimum brightness — turn off and stop
+                      - conditions:
+                          - condition: template
+                            value_template: >
+                              {{ state_attr('light.kitchen_under_cabinet_dimmer', 'brightness') | int(255) <= 26 }}
+                        sequence:
+                          - action: light.turn_off
+                            target:
+                              entity_id: light.kitchen_under_cabinet_dimmer
+                          - stop: "Light reached minimum, turning off"
+                    default:
+                      - action: light.turn_on
+                        target:
+                          entity_id: light.kitchen_under_cabinet_dimmer
+                        data:
+                          brightness_step_pct: -10
+                          transition: 0.4
+                  - delay:
+                      milliseconds: 500
 
-        # Button 3 release — freeze at current brightness if still on
+        # Button 1/3 release — loop is already cancelled by mode: restart.
+        # No action needed; light remains at current level.
         - conditions:
             - condition: trigger
-              id: button_3_release
-            - condition: state
-              entity_id: light.kitchen_under_cabinet_dimmer
-              state: "on"
-          sequence:
-            - action: light.turn_on
-              target:
-                entity_id: light.kitchen_under_cabinet_dimmer
-              data:
-                brightness: "{{ state_attr('light.kitchen_under_cabinet_dimmer', 'brightness') | int(1) }}"
-                transition: 0
+              id:
+                - button_1_release
+                - button_3_release
+          sequence: []
 
-  mode: single
+  mode: restart
   max_exceeded: silent
