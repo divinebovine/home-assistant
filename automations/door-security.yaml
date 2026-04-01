@@ -4,9 +4,9 @@
 # Entities:
 #   - lock.front_door_lock                                  : Front door lock
 #   - lock.back_door_lock                                   : Back door lock
-#   - binary_sensor.front_door_open_close_sensor_window_door_is_open  : Front door open/close sensor
-#   - binary_sensor.back_door_open_close_sensor_window_door_is_open   : Back door open/close sensor
-#   - binary_sensor.garage_door_open_close_sensor_window_door_is_open : Garage door open/close sensor
+#   - binary_sensor.front_door_open_close_sensor_open  : Front door open/close sensor
+#   - binary_sensor.back_door_open_close_sensor_open   : Back door open/close sensor
+#   - binary_sensor.garage_door_open_close_sensor_open : Garage door open/close sensor
 
 #
 # Helpers (see helpers/door_helpers.yaml):
@@ -42,11 +42,11 @@
 
     - platform: state
       id: front_door_changed
-      entity_id: binary_sensor.front_door_open_close_sensor_window_door_is_open
+      entity_id: binary_sensor.front_door_open_close_sensor_open
 
     - platform: state
       id: back_door_changed
-      entity_id: binary_sensor.back_door_open_close_sensor_window_door_is_open
+      entity_id: binary_sensor.back_door_open_close_sensor_open
 
   action:
     - choose:
@@ -60,7 +60,7 @@
               entity_id: lock.front_door_lock
               state: unlocked
             - condition: state
-              entity_id: binary_sensor.front_door_open_close_sensor_window_door_is_open
+              entity_id: binary_sensor.front_door_open_close_sensor_open
               state: "off"
           sequence:
             - service: timer.start
@@ -79,7 +79,7 @@
                   entity_id: lock.front_door_lock
                   state: locked
                 - condition: state
-                  entity_id: binary_sensor.front_door_open_close_sensor_window_door_is_open
+                  entity_id: binary_sensor.front_door_open_close_sensor_open
                   state: "on"
           sequence:
             - service: timer.cancel
@@ -96,7 +96,7 @@
               entity_id: lock.back_door_lock
               state: unlocked
             - condition: state
-              entity_id: binary_sensor.back_door_open_close_sensor_window_door_is_open
+              entity_id: binary_sensor.back_door_open_close_sensor_open
               state: "off"
           sequence:
             - service: timer.start
@@ -115,7 +115,7 @@
                   entity_id: lock.back_door_lock
                   state: locked
                 - condition: state
-                  entity_id: binary_sensor.back_door_open_close_sensor_window_door_is_open
+                  entity_id: binary_sensor.back_door_open_close_sensor_open
                   state: "on"
           sequence:
             - service: timer.cancel
@@ -206,21 +206,21 @@
   trigger:
     - platform: state
       id: front_door_open
-      entity_id: binary_sensor.front_door_open_close_sensor_window_door_is_open
+      entity_id: binary_sensor.front_door_open_close_sensor_open
       to: "on"
       for:
         minutes: 15
 
     - platform: state
       id: back_door_open
-      entity_id: binary_sensor.back_door_open_close_sensor_window_door_is_open
+      entity_id: binary_sensor.back_door_open_close_sensor_open
       to: "on"
       for:
         minutes: 15
 
     - platform: state
       id: garage_door_open
-      entity_id: binary_sensor.garage_door_open_close_sensor_window_door_is_open
+      entity_id: binary_sensor.garage_door_open_close_sensor_open
       to: "on"
       for:
         minutes: 15
