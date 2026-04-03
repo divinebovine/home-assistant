@@ -1,0 +1,26 @@
+alias: String lights
+triggers:
+  - trigger: sun
+    event: sunset
+    offset: "00:30:00"
+    id: sunset
+  - trigger: time
+    at: "00:00:01"
+    id: midnight
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: sunset
+        sequence:
+          - action: switch.turn_on
+            target:
+              entity_id: switch.outdoor_double_plug_string_lights
+      - conditions:
+          - condition: trigger
+            id: midnight
+        sequence:
+          - action: switch.turn_off
+            target:
+              entity_id: switch.outdoor_double_plug_string_lights
+mode: single
