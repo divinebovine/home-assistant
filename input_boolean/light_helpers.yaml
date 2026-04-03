@@ -4,3 +4,7 @@
 office_auto_lights:
   name: "Office Auto Lights"
   icon: mdi:lightbulb-auto
+
+dining_room_auto_lights:
+  name: "Dining Room Auto Lights"
+  icon: mdi:lightbulb-auto

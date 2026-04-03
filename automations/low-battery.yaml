@@ -86,29 +86,23 @@
     # Only run if there are devices with low batteries
     - condition: template
       value_template: >
-        {{ states.sensor
-           | selectattr('entity_id', 'match', '.*battery.*')
-           | selectattr('state', 'is_number')
-           | selectattr('state', '<', 20)
-           | list | length > 0 }}
+        {% set ns = namespace(count=0) %}
+        {% for s in states.sensor | selectattr('entity_id', 'match', '.*battery.*') | selectattr('state', 'is_number') %}
+          {% if s.state | int < 20 %}{% set ns.count = ns.count + 1 %}{% endif %}
+        {% endfor %}
+        {{ ns.count > 0 }}
 
   action:
     # Get list of all low battery devices
     - variables:
         low_battery_devices: >
-          {% set devices = states.sensor
-             | selectattr('entity_id', 'match', '.*battery.*')
-             | selectattr('state', 'is_number')
-             | selectattr('state', '<', 20)
-             | list %}
-          {% set device_list = [] %}
-          {% for device in devices %}
-            {% set device_list = device_list + [
-              (device.attributes.friendly_name or device.entity_id.split('.')[1].replace('_', ' ').title()) 
-              + ': ' + device.state + '%'
-            ] %}
+          {% set ns = namespace(list=[]) %}
+          {% for s in states.sensor | selectattr('entity_id', 'match', '.*battery.*') | selectattr('state', 'is_number') %}
+            {% if s.state | int < 20 %}
+              {% set ns.list = ns.list + [(s.attributes.friendly_name or s.entity_id.split('.')[1].replace('_', ' ').title()) + ': ' + s.state + '%'] %}
+            {% endif %}
           {% endfor %}
-          {{ device_list }}
+          {{ ns.list }}
 
     # Send daily reminder if there are low battery devices
     - condition: template
@@ -193,21 +187,13 @@
   action:
     - variables:
         all_batteries: >
-          {% set devices = states.sensor
-             | selectattr('entity_id', 'match', '.*battery.*')
-             | selectattr('state', 'is_number')
-             | sort(attribute='state')
-             | list %}
-          {% set device_list = [] %}
-          {% for device in devices %}
-            {% set status = '🔴' if device.state < 15 else '🟡' if device.state < 30 else '🟢' %}
-            {% set device_list = device_list + [
-              status + ' ' +
-              (device.attributes.friendly_name or device.entity_id.split('.')[1].replace('_', ' ').title()) 
-              + ': ' + device.state + '%'
-            ] %}
+          {% set ns = namespace(list=[]) %}
+          {% for s in states.sensor | selectattr('entity_id', 'match', '.*battery.*') | selectattr('state', 'is_number') | sort(attribute='state') %}
+            {% set level = s.state | int %}
+            {% set status = '🔴' if level < 15 else '🟡' if level < 30 else '🟢' %}
+            {% set ns.list = ns.list + [status + ' ' + (s.attributes.friendly_name or s.entity_id.split('.')[1].replace('_', ' ').title()) + ': ' + s.state + '%'] %}
           {% endfor %}
-          {{ device_list }}
+          {{ ns.list }}
 
     - service: notify.mobile_app_pixel_8_pro
       data:
