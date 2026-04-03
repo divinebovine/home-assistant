@@ -13,7 +13,8 @@
 # Automation 1 — Skimmer Clog Monitor:
 #   - Normal operating range: 3,000–3,450 RPM / ~80 GPM
 #   - Alert triggers when GPM drops 15%+ below 80 GPM (i.e., <= 68 GPM)
-#     WHILE pump is on and RPM remains >= 2,800 RPM
+#     WHILE RPM remains >= 2,800 RPM (distinguishes clog at high speed from
+#     intentional low-speed eco programs where RPM is lower)
 #   - Condition must persist for 5 minutes before notifying
 #   - Re-notifies after 30 minutes if the problem is not resolved
 #   - Shuts off the pump after 1 hour if still clogged
@@ -59,10 +60,7 @@
         - conditions:
             - condition: trigger
               id: clogged
-            # Confirm pump is on and running at high speed (not intentional low speed or spinning down)
-            - condition: state
-              entity_id: switch.pool_pump
-              state: "on"
+            # Confirm pump is running at high speed (RPM = 0 when off, low when at eco speed)
             - condition: numeric_state
               entity_id: sensor.pool_vsf_rpm
               above: 2799
@@ -94,9 +92,6 @@
                 minutes: 30
 
             # Re-check after 30 min delay before sending reminder
-            - condition: state
-              entity_id: switch.pool_pump
-              state: "on"
             - condition: numeric_state
               entity_id: sensor.pool_vsf_gpm
               below: 68
@@ -125,9 +120,6 @@
             - delay:
                 minutes: 30
 
-            - condition: state
-              entity_id: switch.pool_pump
-              state: "on"
             - condition: numeric_state
               entity_id: sensor.pool_vsf_gpm
               below: 68
