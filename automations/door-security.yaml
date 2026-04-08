@@ -167,35 +167,65 @@
       target:
         entity_id: "{{ lock_entity | trim }}"
 
-    # Wait for lock to respond before checking state
-    - delay:
-        seconds: 15
-
-    # If lock did not engage, notify
-    - if:
-        - condition: template
-          value_template: "{{ not is_state(lock_entity | trim, 'locked') }}"
-      then:
-        - service: notify.mobile_app_pixel_8_pro
-          data:
-            title: "🔒 Lock Failed — {{ door_name | trim }}"
-            message: >
-              Could not lock the {{ door_name | trim }}.
-              The lock may be jammed or obstructed.
-              Current lock state: {{ states(lock_entity | trim) }}.
-              Please check the door manually.
-            data:
-              channel: "Door Alerts"
-              importance: high
-              ttl: 0
-              priority: high
-
   mode: parallel
   max: 3
   max_exceeded: silent
 
 # ----------------------------------------------------------
-# AUTOMATION 3: Alert when door is left open for 15 minutes
+# AUTOMATION 3: Alert when lock fails to engage
+# Triggered directly by Z-Wave "RF not fully locked" notification
+# ----------------------------------------------------------
+- id: door_lock_failed
+  alias: "Doors - Lock Failed to Engage"
+  description: >
+    Fires immediately when a Z-Wave lock reports it could not fully lock.
+    Triggered by the Access Control "RF not fully locked operation" notification.
+
+  trigger:
+    - platform: event
+      event_type: zwave_js_notification
+      event_data:
+        node_id: 5
+        type: 6
+        event: 9
+      id: front_door_failed
+
+    - platform: event
+      event_type: zwave_js_notification
+      event_data:
+        node_id: 258
+        type: 6
+        event: 9
+      id: back_door_failed
+
+  variables:
+    door_name: >
+      {% if trigger.id == 'front_door_failed' %}
+        Front Door
+      {% else %}
+        Back Door
+      {% endif %}
+
+  action:
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "🔒 Lock Failed — {{ door_name | trim }}"
+        message: >
+          The {{ door_name | trim }} could not fully lock.
+          The door may not be fully closed or the bolt is obstructed.
+          Please check the door manually.
+        data:
+          channel: "Door Alerts"
+          importance: high
+          ttl: 0
+          priority: high
+
+  mode: parallel
+  max: 2
+  max_exceeded: silent
+
+# ----------------------------------------------------------
+# AUTOMATION 4: Alert when door is left open for 15 minutes
 # ----------------------------------------------------------
 - id: door_open_too_long
   alias: "Doors - Open for More Than 15 Minutes"
