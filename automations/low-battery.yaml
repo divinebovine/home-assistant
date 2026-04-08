@@ -87,7 +87,7 @@
     - condition: template
       value_template: >
         {% set ns = namespace(count=0) %}
-        {% for s in states.sensor | selectattr('entity_id', 'match', '.*battery.*') | selectattr('state', 'is_number') %}
+        {% for s in states.sensor | selectattr('attributes.device_class', 'eq', 'battery') | selectattr('state', 'is_number') %}
           {% if s.state | int < 20 %}{% set ns.count = ns.count + 1 %}{% endif %}
         {% endfor %}
         {{ ns.count > 0 }}
@@ -97,7 +97,7 @@
     - variables:
         low_battery_devices: >
           {% set ns = namespace(list=[]) %}
-          {% for s in states.sensor | selectattr('entity_id', 'match', '.*battery.*') | selectattr('state', 'is_number') %}
+          {% for s in states.sensor | selectattr('attributes.device_class', 'eq', 'battery') | selectattr('state', 'is_number') %}
             {% if s.state | int < 20 %}
               {% set ns.list = ns.list + [(s.attributes.friendly_name or s.entity_id.split('.')[1].replace('_', ' ').title()) + ': ' + s.state + '%'] %}
             {% endif %}
@@ -181,14 +181,16 @@
   trigger:
     - platform: time
       at: "08:00:00"
-    - platform: template
-      value_template: "{{ now().weekday() == 6 }}"  # Sunday = 6
+  condition:
+    - condition: time
+      weekday:
+        - sun
 
   action:
     - variables:
         all_batteries: >
           {% set ns = namespace(list=[]) %}
-          {% for s in states.sensor | selectattr('entity_id', 'match', '.*battery.*') | selectattr('state', 'is_number') | sort(attribute='state') %}
+          {% for s in states.sensor | selectattr('attributes.device_class', 'eq', 'battery') | selectattr('state', 'is_number') | sort(attribute='state') %}
             {% set level = s.state | int %}
             {% set status = '🔴' if level < 15 else '🟡' if level < 30 else '🟢' %}
             {% set ns.list = ns.list + [status + ' ' + (s.attributes.friendly_name or s.entity_id.split('.')[1].replace('_', ' ').title()) + ': ' + s.state + '%'] %}
