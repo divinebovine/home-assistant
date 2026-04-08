@@ -169,7 +169,7 @@
 
     # Wait for lock to respond before checking state
     - delay:
-        seconds: 5
+        seconds: 15
 
     # If lock did not engage, notify
     - if:
