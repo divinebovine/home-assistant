@@ -167,6 +167,28 @@
       target:
         entity_id: "{{ lock_entity | trim }}"
 
+    # Wait for lock to respond before checking state
+    - delay:
+        seconds: 15
+
+    # If lock did not engage, notify
+    - if:
+        - condition: template
+          value_template: "{{ not is_state(lock_entity | trim, 'locked') }}"
+      then:
+        - service: notify.mobile_app_pixel_8_pro
+          data:
+            title: "🔒 Lock Failed — {{ door_name | trim }}"
+            message: >
+              Could not lock the {{ door_name | trim }}.
+              The lock may be jammed or obstructed.
+              Please check the door manually.
+            data:
+              channel: "Door Alerts"
+              importance: high
+              ttl: 0
+              priority: high
+
   mode: parallel
   max: 3
   max_exceeded: silent

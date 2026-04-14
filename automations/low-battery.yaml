@@ -189,11 +189,14 @@
   action:
     - variables:
         all_batteries: >
+          {% set zwave_entities = integration_entities('zwave_js') %}
           {% set ns = namespace(list=[]) %}
           {% for s in states.sensor | selectattr('attributes.device_class', 'eq', 'battery') | selectattr('state', 'is_number') | sort(attribute='state') %}
-            {% set level = s.state | int %}
-            {% set status = '🔴' if level < 15 else '🟡' if level < 30 else '🟢' %}
-            {% set ns.list = ns.list + [status + ' ' + (s.attributes.friendly_name or s.entity_id.split('.')[1].replace('_', ' ').title()) + ': ' + s.state + '%'] %}
+            {% if s.entity_id in zwave_entities %}
+              {% set level = s.state | int %}
+              {% set status = '🔴' if level < 15 else '🟡' if level < 30 else '🟢' %}
+              {% set ns.list = ns.list + [status + ' ' + (s.attributes.friendly_name or s.entity_id.split('.')[1].replace('_', ' ').title()) + ': ' + s.state + '%'] %}
+            {% endif %}
           {% endfor %}
           {{ ns.list }}
 
