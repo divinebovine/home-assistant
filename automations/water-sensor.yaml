@@ -1,0 +1,322 @@
+###############################################################
+# Water Sensor Automations
+#
+# Hardware:
+#   - Aeotec 8 Water Sensors (Z-Wave)
+#
+# Monitored Sensors:
+#   - binary_sensor/sensor.water_heater_water_sensor_*
+#   - binary_sensor/sensor.kitchen_sink_water_sensor_*
+#
+# Logic:
+#   - Water leak: immediate critical alert + all-clear when resolved
+#   - Freeze warning: alert when temperature drops below 40°F
+#   - High temp: alert when temperature exceeds 130°F (attic overheating)
+#   - High humidity: alert when humidity exceeds 80% for 30 minutes
+#   - On HA restart: checks current state and alerts if thresholds already exceeded
+#
+# Note: When adding new sensors, update the entity lists in ALL automations
+#       (both the runtime triggers and the startup check variables).
+###############################################################
+
+# ----------------------------------------------------------
+# AUTOMATION 1: Water Leak Detected
+# ----------------------------------------------------------
+- id: water_leak_detected
+  alias: "Safety - Water Leak Detected"
+  description: >
+    Sends an immediate critical alert when any water sensor detects a leak.
+
+  trigger:
+    - platform: state
+      # Add new sensors here as they are installed
+      entity_id:
+        - binary_sensor.water_heater_water_sensor_water_leak_detected
+        - binary_sensor.kitchen_sink_water_sensor_water_leak_detected
+      to: "on"
+
+  action:
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "💧🚨 Water Leak Detected"
+        message: >
+          {{ trigger.to_state.attributes.friendly_name.split(' Water Sensor')[0] }}
+          — Check the area immediately to prevent water damage.
+        data:
+          channel: "Emergency Alerts"
+          importance: max
+          ttl: 0
+          priority: high
+          color: red
+          persistent: true
+
+  mode: parallel
+  max: 10
+  max_exceeded: silent
+
+# ----------------------------------------------------------
+# AUTOMATION 2: Water Leak Cleared
+# ----------------------------------------------------------
+- id: water_leak_cleared
+  alias: "Safety - Water Leak Cleared"
+  description: >
+    Sends an all-clear notification when a water sensor returns to dry.
+
+  trigger:
+    - platform: state
+      # Add new sensors here as they are installed
+      entity_id:
+        - binary_sensor.water_heater_water_sensor_water_leak_detected
+        - binary_sensor.kitchen_sink_water_sensor_water_leak_detected
+      from: "on"
+      to: "off"
+
+  action:
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "✅ Water Leak Cleared"
+        message: >
+          {{ trigger.to_state.attributes.friendly_name.split(' Water Sensor')[0] }}
+          is now dry. Please check for any water damage.
+        data:
+          channel: "Emergency Alerts"
+          importance: high
+          ttl: 0
+          priority: normal
+          color: green
+
+  mode: parallel
+  max: 10
+  max_exceeded: silent
+
+# ----------------------------------------------------------
+# AUTOMATION 3: Freeze Warning
+# Alert when temperature drops near freezing — risk of pipe damage
+# ----------------------------------------------------------
+- id: water_sensor_freeze_warning
+  alias: "Safety - Water Sensor Freeze Warning"
+  description: >
+    Sends a warning when a sensor location drops below 40°F,
+    indicating a freeze risk that could damage pipes.
+
+  trigger:
+    - platform: numeric_state
+      # Add new sensors here as they are installed
+      entity_id:
+        - sensor.water_heater_water_sensor_air_temperature
+        - sensor.kitchen_sink_water_sensor_air_temperature
+      below: 40
+      for:
+        minutes: 5
+
+  action:
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "🥶 Freeze Warning"
+        message: >
+          {{ trigger.to_state.attributes.friendly_name.split(' Water Sensor')[0] }}
+          is {{ trigger.to_state.state | round(1) }}°F — risk of frozen pipes.
+          Take action to prevent damage.
+        data:
+          channel: "Emergency Alerts"
+          importance: high
+          ttl: 0
+          priority: high
+          color: blue
+
+  mode: parallel
+  max: 10
+  max_exceeded: silent
+
+# ----------------------------------------------------------
+# AUTOMATION 4: High Temperature Warning
+# Alert when a sensor location exceeds 130°F (e.g. attic overheating)
+# ----------------------------------------------------------
+- id: water_sensor_high_temp
+  alias: "Safety - Water Sensor High Temperature"
+  description: >
+    Sends a warning when a sensor location exceeds 130°F.
+    Threshold is a starting point — tune based on observed summer highs.
+
+  trigger:
+    - platform: numeric_state
+      # Add new sensors here as they are installed
+      entity_id:
+        - sensor.water_heater_water_sensor_air_temperature
+        - sensor.kitchen_sink_water_sensor_air_temperature
+      above: 130
+      for:
+        minutes: 5
+
+  action:
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "🌡️ High Temperature Warning"
+        message: >
+          {{ trigger.to_state.attributes.friendly_name.split(' Water Sensor')[0] }}
+          is {{ trigger.to_state.state | round(1) }}°F — abnormally high temperature detected.
+        data:
+          channel: "Emergency Alerts"
+          importance: high
+          ttl: 0
+          priority: high
+          color: orange
+
+  mode: parallel
+  max: 10
+  max_exceeded: silent
+
+# ----------------------------------------------------------
+# AUTOMATION 5: High Humidity Warning
+# Alert when humidity exceeds 80% for 30 minutes
+# ----------------------------------------------------------
+- id: water_sensor_high_humidity
+  alias: "Safety - Water Sensor High Humidity"
+  description: >
+    Sends a warning when a sensor location sustains humidity above 80%
+    for 30 minutes, which may indicate a slow leak or ventilation issue.
+
+  trigger:
+    - platform: numeric_state
+      # Add new sensors here as they are installed
+      entity_id:
+        - sensor.water_heater_water_sensor_humidity
+        - sensor.kitchen_sink_water_sensor_humidity
+      above: 80
+      for:
+        minutes: 30
+
+  action:
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "💦 High Humidity Warning"
+        message: >
+          {{ trigger.to_state.attributes.friendly_name.split(' Water Sensor')[0] }}
+          humidity is {{ trigger.to_state.state | round(1) }}% — sustained high humidity
+          may indicate a slow leak or poor ventilation.
+        data:
+          channel: "Emergency Alerts"
+          importance: high
+          ttl: 0
+          priority: high
+          color: blue
+
+  mode: parallel
+  max: 10
+  max_exceeded: silent
+
+# ----------------------------------------------------------
+# AUTOMATION 6: Startup Check
+# On HA restart, immediately alert if any threshold is already exceeded
+# ----------------------------------------------------------
+- id: water_sensor_startup_check
+  alias: "Safety - Water Sensor Startup Check"
+  description: >
+    On HA restart, checks all water sensors and fires alerts for any
+    conditions that were already active before the restart.
+
+  trigger:
+    - platform: homeassistant
+      event: start
+
+  action:
+    - variables:
+        # Add new sensors here as they are installed
+        temp_sensors:
+          - sensor.water_heater_water_sensor_air_temperature
+          - sensor.kitchen_sink_water_sensor_air_temperature
+        humidity_sensors:
+          - sensor.water_heater_water_sensor_humidity
+          - sensor.kitchen_sink_water_sensor_humidity
+        leak_sensors:
+          - binary_sensor.water_heater_water_sensor_water_leak_detected
+          - binary_sensor.kitchen_sink_water_sensor_water_leak_detected
+
+    # Check for active leaks
+    - repeat:
+        for_each: "{{ leak_sensors }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ is_state(repeat.item, 'on') }}"
+            then:
+              - service: notify.mobile_app_pixel_8_pro
+                data:
+                  title: "💧🚨 Water Leak Active"
+                  message: >
+                    {{ state_attr(repeat.item, 'friendly_name').split(' Water Sensor')[0] }}
+                    has an active water leak. Check the area immediately.
+                  data:
+                    channel: "Emergency Alerts"
+                    importance: max
+                    ttl: 0
+                    priority: high
+                    color: red
+                    persistent: true
+
+    # Check for freeze conditions
+    - repeat:
+        for_each: "{{ temp_sensors }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ states(repeat.item) | float(999) < 40 }}"
+            then:
+              - service: notify.mobile_app_pixel_8_pro
+                data:
+                  title: "🥶 Freeze Warning"
+                  message: >
+                    {{ state_attr(repeat.item, 'friendly_name').split(' Water Sensor')[0] }}
+                    is {{ states(repeat.item) | round(1) }}°F — risk of frozen pipes.
+                    Take action to prevent damage.
+                  data:
+                    channel: "Emergency Alerts"
+                    importance: high
+                    ttl: 0
+                    priority: high
+                    color: blue
+
+    # Check for high temperature conditions
+    - repeat:
+        for_each: "{{ temp_sensors }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ states(repeat.item) | float(0) > 130 }}"
+            then:
+              - service: notify.mobile_app_pixel_8_pro
+                data:
+                  title: "🌡️ High Temperature Warning"
+                  message: >
+                    {{ state_attr(repeat.item, 'friendly_name').split(' Water Sensor')[0] }}
+                    is {{ states(repeat.item) | round(1) }}°F — abnormally high temperature detected.
+                  data:
+                    channel: "Emergency Alerts"
+                    importance: high
+                    ttl: 0
+                    priority: high
+                    color: orange
+
+    # Check for high humidity conditions
+    - repeat:
+        for_each: "{{ humidity_sensors }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ states(repeat.item) | float(0) > 80 }}"
+            then:
+              - service: notify.mobile_app_pixel_8_pro
+                data:
+                  title: "💦 High Humidity Warning"
+                  message: >
+                    {{ state_attr(repeat.item, 'friendly_name').split(' Water Sensor')[0] }}
+                    humidity is {{ states(repeat.item) | round(1) }}% — sustained high humidity
+                    may indicate a slow leak or poor ventilation.
+                  data:
+                    channel: "Emergency Alerts"
+                    importance: high
+                    ttl: 0
+                    priority: high
+                    color: blue
+
+  mode: single
