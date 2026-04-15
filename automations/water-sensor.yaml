@@ -140,10 +140,8 @@
 
   trigger:
     - platform: numeric_state
-      # Add new sensors here as they are installed
-      entity_id:
-        - sensor.water_heater_water_sensor_air_temperature
-        - sensor.kitchen_sink_water_sensor_air_temperature
+      # Only applicable to the sensor in the attic
+      entity_id: sensor.water_heater_water_sensor_air_temperature
       above: 130
       for:
         minutes: 5
@@ -225,6 +223,9 @@
         temp_sensors:
           - sensor.water_heater_water_sensor_air_temperature
           - sensor.kitchen_sink_water_sensor_air_temperature
+        # Only applicable to the sensor in the attic
+        overheat_sensors:
+          - sensor.water_heater_water_sensor_air_temperature
         humidity_sensors:
           - sensor.water_heater_water_sensor_humidity
           - sensor.kitchen_sink_water_sensor_humidity
@@ -278,7 +279,7 @@
 
     # Check for high temperature conditions
     - repeat:
-        for_each: "{{ temp_sensors }}"
+        for_each: "{{ overheat_sensors }}"
         sequence:
           - if:
               - condition: template
