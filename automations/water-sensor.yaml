@@ -10,6 +10,7 @@
 #   - binary_sensor/sensor.kids_bathroom_left_sink_water_sensor_*
 #   - binary_sensor/sensor.kids_bathroom_right_sink_water_sensor_*
 #   - binary_sensor/sensor.laundry_room_water_sensor_*
+#   - binary_sensor/sensor.guest_bathroom_water_sensor_*
 #
 # Logic:
 #   - Water leak: immediate critical alert + all-clear when resolved
@@ -39,6 +40,7 @@
         - binary_sensor.kids_bathroom_left_sink_water_sensor_water_leak_detected
         - binary_sensor.kids_bathroom_right_sink_water_sensor_water_leak_detected
         - binary_sensor.laundry_room_water_sensor_water_leak_detected
+        - binary_sensor.guest_bathroom_water_sensor_water_leak_detected
       to: "on"
 
   action:
@@ -77,6 +79,7 @@
         - binary_sensor.kids_bathroom_left_sink_water_sensor_water_leak_detected
         - binary_sensor.kids_bathroom_right_sink_water_sensor_water_leak_detected
         - binary_sensor.laundry_room_water_sensor_water_leak_detected
+        - binary_sensor.guest_bathroom_water_sensor_water_leak_detected
       from: "on"
       to: "off"
 
@@ -117,6 +120,7 @@
         - sensor.kids_bathroom_left_sink_water_sensor_air_temperature
         - sensor.kids_bathroom_right_sink_water_sensor_air_temperature
         - sensor.laundry_room_water_sensor_air_temperature
+        - sensor.guest_bathroom_water_sensor_air_temperature
       below: 40
       for:
         minutes: 5
@@ -195,6 +199,7 @@
         - sensor.kids_bathroom_left_sink_water_sensor_humidity
         - sensor.kids_bathroom_right_sink_water_sensor_humidity
         - sensor.laundry_room_water_sensor_humidity
+        - sensor.guest_bathroom_water_sensor_humidity
       above: 80
       for:
         minutes: 30
@@ -241,6 +246,7 @@
           - sensor.kids_bathroom_left_sink_water_sensor_air_temperature
           - sensor.kids_bathroom_right_sink_water_sensor_air_temperature
           - sensor.laundry_room_water_sensor_air_temperature
+          - sensor.guest_bathroom_water_sensor_air_temperature
         # Only applicable to the sensor in the attic
         overheat_sensors:
           - sensor.water_heater_water_sensor_air_temperature
@@ -250,12 +256,14 @@
           - sensor.kids_bathroom_left_sink_water_sensor_humidity
           - sensor.kids_bathroom_right_sink_water_sensor_humidity
           - sensor.laundry_room_water_sensor_humidity
+          - sensor.guest_bathroom_water_sensor_humidity
         leak_sensors:
           - binary_sensor.water_heater_water_sensor_water_leak_detected
           - binary_sensor.kitchen_sink_water_sensor_water_leak_detected
           - binary_sensor.kids_bathroom_left_sink_water_sensor_water_leak_detected
           - binary_sensor.kids_bathroom_right_sink_water_sensor_water_leak_detected
           - binary_sensor.laundry_room_water_sensor_water_leak_detected
+          - binary_sensor.guest_bathroom_water_sensor_water_leak_detected
 
     # Check for active leaks
     - repeat:
