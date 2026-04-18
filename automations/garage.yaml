@@ -1,0 +1,105 @@
+###############################################################
+# Garage Door Automations
+#
+# Hardware:
+#   - ratgdo32 Disco (garage door controller)
+#   - Tesla Model Y (via Tessie)
+#
+# Entities:
+#   - cover.ratgdo32disco_fc1530_door       : Garage door
+#   - binary_sensor.ratgdo32disco_fc1530_obstruction : Obstruction sensor
+#   - device_tracker.tessie_location        : Tesla location
+#   - sensor.tessie_shift_state             : Tesla shift state
+#
+# Prerequisites:
+#   - A zone named "Home" must be configured in HA
+#     Settings → Areas & Zones → Zones → Add Zone
+#
+# Logic:
+#   - Opens garage door when Tesla enters the Home zone
+#     but only if the door is currently closed
+#   - Opens garage door when Tesla shifts into Drive
+#     but only if the door is currently closed
+#   - Closes garage door when Tesla leaves the Home zone
+#     but only if the door is currently open
+###############################################################
+
+# ----------------------------------------------------------
+# AUTOMATION 1: Open garage when arriving home
+# ----------------------------------------------------------
+- id: garage_open_on_arrival
+  alias: "Garage - Open on Arrival"
+  description: >
+    Opens the garage door when the Tesla enters the Home zone.
+    Only triggers if the door is currently closed.
+
+  trigger:
+    - platform: zone
+      entity_id: device_tracker.tessie_location
+      zone: zone.home
+      event: enter
+
+  condition:
+    - condition: state
+      entity_id: cover.ratgdo32disco_fc1530_door
+      state: closed
+
+  action:
+    - service: cover.open_cover
+      target:
+        entity_id: cover.ratgdo32disco_fc1530_door
+
+  mode: single
+
+# ----------------------------------------------------------
+# AUTOMATION 2: Close garage when leaving home
+# ----------------------------------------------------------
+- id: garage_close_on_departure
+  alias: "Garage - Close on Departure"
+  description: >
+    Closes the garage door when the Tesla leaves the Home zone.
+    Only triggers if the door is currently open.
+
+  trigger:
+    - platform: zone
+      entity_id: device_tracker.tessie_location
+      zone: zone.home
+      event: leave
+
+  condition:
+    - condition: state
+      entity_id: cover.ratgdo32disco_fc1530_door
+      state: open
+
+  action:
+    - service: cover.close_cover
+      target:
+        entity_id: cover.ratgdo32disco_fc1530_door
+
+  mode: single
+
+# ----------------------------------------------------------
+# AUTOMATION 3: Open garage when shifting into Drive
+# ----------------------------------------------------------
+- id: garage_open_on_drive
+  alias: "Garage - Open When Shifting Into Drive"
+  description: >
+    Opens the garage door when the Tesla shifts into Drive.
+    Only triggers if the door is currently closed.
+
+  trigger:
+    - platform: state
+      entity_id: sensor.tessie_shift_state
+      to: "D"
+
+  condition:
+    - condition: state
+      entity_id: cover.ratgdo32disco_fc1530_door
+      state: closed
+
+  action:
+    - service: cover.open_cover
+      target:
+        entity_id: cover.ratgdo32disco_fc1530_door
+
+  mode: single
