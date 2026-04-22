@@ -204,20 +204,40 @@
     Triggered by the Access Control "RF not fully locked operation" notification.
 
   trigger:
+    # event 8: RF not fully locked operation (bolt could not fully engage)
     - platform: event
       event_type: zwave_js_notification
       event_data:
         node_id: 5
         type: 6
-        event: 9
+        event: 8
       id: front_door_failed
 
+    # event 11: Lock jammed (motor stalled/blocked)
+    - platform: event
+      event_type: zwave_js_notification
+      event_data:
+        node_id: 5
+        type: 6
+        event: 11
+      id: front_door_failed
+
+    # event 8: RF not fully locked operation (bolt could not fully engage)
     - platform: event
       event_type: zwave_js_notification
       event_data:
         node_id: 258
         type: 6
-        event: 9
+        event: 8
+      id: back_door_failed
+
+    # event 11: Lock jammed (motor stalled/blocked)
+    - platform: event
+      event_type: zwave_js_notification
+      event_data:
+        node_id: 258
+        type: 6
+        event: 11
       id: back_door_failed
 
   variables:
