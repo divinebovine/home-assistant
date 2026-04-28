@@ -1,0 +1,15 @@
+# input_text/irrigation_helpers.yaml
+#
+# Tracks which irrigation zones ran today. Updated by the main irrigation
+# automation as each zone fires. Persists across HA restarts.
+#
+# Format stored: "YYYY-MM-DD|c1_z1,c1_z2,..." (date prefix + CSV of trigger IDs)
+# The date prefix lets the summary automation detect stale data from a prior day.
+#
+# In configuration.yaml, ensure input_text is loaded from this directory:
+#   input_text: !include_dir_merge_named input_text/
+
+irrigation_zones_ran:
+  name: "Irrigation Zones Ran Today"
+  max: 255
+  icon: mdi:sprinkler-variant

@@ -18,6 +18,9 @@
 #       Entity ID: input_number.irrigation_et_deficit
 #       Min: -5, Max: 10, Step: 0.01, Unit: in
 #     Or use the companion helpers.yaml (see irrigation_helpers.yaml).
+#   - The zones-ran tracker must exist. Load it via:
+#     input_text: !include_dir_merge_named input_text/
+#     (see input_text/irrigation_helpers.yaml)
 #
 # SKIP LOGIC:
 #   1. RAIN SKIP — Skips the entire watering day if NWS reports ≥ 0.25 in of
@@ -42,9 +45,14 @@
 #   skipped; all remaining zones for that day fire at their scheduled times.
 #   The hardware timer (run_seconds) ensures each zone stops correctly
 #   regardless of HA state.
+#
+#   Zone tracking uses input_text.irrigation_zones_ran, which persists across
+#   restarts. Each zone records itself as it fires using a date-stamped format
+#   (e.g. "2026-04-29|c1_z1,c1_z2,c1_z3"). The summary automation reads this
+#   at 08:15 to determine which zones ran and which (if any) were missed.
 
 # ══════════════════════════════════════════════════════════════════════════════
-# AUTOMATION 1 OF 3 — Main irrigation schedule with skip conditions
+# AUTOMATION 1 OF 4 — Main irrigation schedule with skip conditions
 # ══════════════════════════════════════════════════════════════════════════════
 - alias: "Open Sprinkler - Irrigation Schedule"
   id: "open_sprinkler_irrigation_schedule"
@@ -52,6 +60,7 @@
     Zones 1-4 and 6-8, 3 min each. Two cycles separated by a 1.5-hour break.
     Runs Tue/Sat at 6:00 AM Central. Restart-resilient via fixed time triggers.
     Skips if recent rain ≥ 0.25 in OR ET deficit < 0.20 in.
+    Records each zone to input_text.irrigation_zones_ran for the run summary.
   mode: single
   trigger:
     # ── Cycle 1: 06:00–06:21 ─────────────────────────────────────────────
@@ -163,8 +172,24 @@
           data:
             run_seconds: 180
 
+        # ── Record this zone to the persistent tracker ────────────────────
+        # Format: "YYYY-MM-DD|c1_z1,c1_z2,..."
+        # If the date prefix matches today, append; otherwise start fresh.
+        - service: input_text.set_value
+          target:
+            entity_id: input_text.irrigation_zones_ran
+          data:
+            value: >
+              {% set raw = states('input_text.irrigation_zones_ran') %}
+              {% set today = now().strftime('%Y-%m-%d') %}
+              {% if '|' in raw and raw.split('|')[0] == today %}
+                {{ today ~ '|' ~ raw.split('|')[1] ~ ',' ~ trigger.id }}
+              {% else %}
+                {{ today ~ '|' ~ trigger.id }}
+              {% endif %}
+
 # ══════════════════════════════════════════════════════════════════════════════
-# AUTOMATION 2 OF 3 — Daily ET deficit accumulator (runs at 8:00 PM)
+# AUTOMATION 2 OF 4 — Daily ET deficit accumulator (runs at 8:00 PM)
 #
 # Estimates daily evapotranspiration using the ASCE Standardized Penman-
 # Monteith ET₀ equation (short reference / grass), as recommended by Texas
@@ -326,7 +351,7 @@
         notification_id: "irrigation_et_update"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# AUTOMATION 3 OF 3 — Rain credit (immediate deficit reduction on heavy rain)
+# AUTOMATION 3 OF 4 — Rain credit (immediate deficit reduction on heavy rain)
 #
 # If NWS reports ≥ 0.5 in of rain at any point during the day, immediately
 # credit that rain against the deficit so the evening accumulator doesn't
@@ -357,3 +382,132 @@
           Significant rainfall detected (≥ 0.5 in).
           ET deficit reset to 0. Irrigation will be skipped until deficit rebuilds.
         notification_id: "irrigation_rain_credit"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTOMATION 4 OF 4 — Irrigation run summary / skip notification
+#
+# Fires at 08:15 on Tue/Sat — 6 minutes after the last possible zone finishes.
+# Reads input_text.irrigation_zones_ran (written by Automation 1 as each zone
+# fires) and sends a mobile push notification with one of three outcomes:
+#
+#   COMPLETE  — all 14 zone-runs recorded; lists both cycles
+#   PARTIAL   — some zones ran; shows which ran and which were missed per cycle
+#   SKIPPED   — no zones ran; explains whether it was a rain skip, ET skip,
+#               or possible HA downtime during the watering window
+#
+# The zones-ran tracker uses a date-stamped format ("YYYY-MM-DD|c1_z1,...") so
+# stale data from a prior day is automatically ignored after a restart.
+# ══════════════════════════════════════════════════════════════════════════════
+- alias: "Open Sprinkler - Irrigation Run Summary"
+  id: "open_sprinkler_irrigation_summary"
+  description: >
+    Fires at 08:15 Tue/Sat. Sends a push notification reporting which zones
+    ran and which were missed, or why irrigation was skipped entirely.
+  mode: single
+  trigger:
+    - platform: time
+      at: "08:15:00"
+  condition:
+    - condition: time
+      weekday:
+        - tue
+        - sat
+  action:
+    # ── Step 1: Gather raw inputs ─────────────────────────────────────────
+    - variables:
+        today_str: "{{ now().strftime('%Y-%m-%d') }}"
+        raw_tracker: "{{ states('input_text.irrigation_zones_ran') }}"
+        rain_in: >
+          {{ state_attr('weather.kads', 'precipitation_last_24hr') | float(0) }}
+        et_deficit: >
+          {{ states('input_number.irrigation_et_deficit') | float(0) }}
+
+    # ── Step 2: Extract today's zone list (empty string if no data for today) ─
+    - variables:
+        zones_ran_csv: >
+          {% if '|' in raw_tracker and raw_tracker.split('|')[0] == today_str %}
+            {{ raw_tracker.split('|')[1] }}
+          {% else %}
+
+          {% endif %}
+
+    # ── Step 3: Build notification title ─────────────────────────────────
+    - variables:
+        notif_title: >
+          {% set ran_raw = zones_ran_csv.strip() %}
+          {% set ran = ran_raw.split(',') if ran_raw else [] %}
+          {% set total = ran | length %}
+          {% if total == 0 %}
+            {% set rain = rain_in %}
+            {% set deficit = et_deficit %}
+            {% if rain >= 0.25 %}
+              Irrigation Skipped — Rain ({{ rain | round(2) }} in)
+            {% elif deficit < 0.20 %}
+              Irrigation Skipped — Low Deficit ({{ deficit | round(2) }} in)
+            {% else %}
+              Irrigation — No Activity Recorded
+            {% endif %}
+          {% elif total == 14 %}
+            Irrigation Complete — All Zones Ran
+          {% else %}
+            Irrigation Partial — {{ total }}/14 Zones Ran
+          {% endif %}
+
+    # ── Step 4: Build notification message ───────────────────────────────
+    - variables:
+        notif_message: >
+          {% set ran_raw = zones_ran_csv.strip() %}
+          {% set ran = ran_raw.split(',') if ran_raw else [] %}
+          {% set total = ran | length %}
+
+          {% if total == 0 %}
+            {# ── Skipped or no activity ── #}
+            {% set rain = rain_in %}
+            {% set deficit = et_deficit %}
+            {% if rain >= 0.25 %}
+              Rain skip: {{ rain | round(2) }} in recorded (threshold: 0.25 in).
+              ET deficit at time of report: {{ deficit | round(2) }} in.
+            {% elif deficit < 0.20 %}
+              ET deficit {{ deficit | round(2) }} in is below the 0.20 in threshold — lawn has enough water.
+              Rain: {{ rain | round(2) }} in.
+            {% else %}
+              No zones were recorded for today. HA may have been offline during the watering window (06:00–08:09).
+              Rain: {{ rain | round(2) }} in, ET deficit: {{ deficit | round(2) }} in.
+            {% endif %}
+
+          {% else %}
+            {# ── Compute per-cycle ran/missed ── #}
+            {% set expected_c1 = ['c1_z1','c1_z2','c1_z3','c1_z4','c1_z6','c1_z7','c1_z8'] %}
+            {% set expected_c2 = ['c2_z1','c2_z2','c2_z3','c2_z4','c2_z6','c2_z7','c2_z8'] %}
+            {% set ns = namespace(c1r=[], c1m=[], c2r=[], c2m=[]) %}
+            {% for z in expected_c1 %}
+              {% if z in ran %}
+                {% set ns.c1r = ns.c1r + [z.split('_z')[1]] %}
+              {% else %}
+                {% set ns.c1m = ns.c1m + [z.split('_z')[1]] %}
+              {% endif %}
+            {% endfor %}
+            {% for z in expected_c2 %}
+              {% if z in ran %}
+                {% set ns.c2r = ns.c2r + [z.split('_z')[1]] %}
+              {% else %}
+                {% set ns.c2m = ns.c2m + [z.split('_z')[1]] %}
+              {% endif %}
+            {% endfor %}
+
+            Cycle 1 ran: {{ ns.c1r | join(', ') if ns.c1r else 'none' }}
+            {%- if ns.c1m %}
+            Cycle 1 missed: {{ ns.c1m | join(', ') }}
+            {%- endif %}
+            Cycle 2 ran: {{ ns.c2r | join(', ') if ns.c2r else 'none' }}
+            {%- if ns.c2m %}
+            Cycle 2 missed: {{ ns.c2m | join(', ') }}
+            {%- endif %}
+            {{ total }}/14 zones completed.
+          {% endif %}
+
+    # ── Step 5: Send push notification ───────────────────────────────────
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "{{ notif_title | trim }}"
+        message: "{{ notif_message | trim }}"
