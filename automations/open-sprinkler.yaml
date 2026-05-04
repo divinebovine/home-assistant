@@ -131,12 +131,12 @@
         {{ states('input_number.irrigation_et_deficit') | float(0) >= 0.20 }}
 
   action:
-    # ── Reset ET deficit after a watering run starts ──────────────────────
-    # Only reset on the very first trigger of the day (c1_z1) so the deficit
-    # isn't zeroed out mid-schedule for triggers c1_z2 through c2_z8.
+    # ── Reset ET deficit after the last zone of the day completes ────────
+    # Reset only on c2_z8 (the final zone) so all zones pass the
+    # ET deficit condition (>= 0.20) throughout the schedule.
     - if:
         - condition: template
-          value_template: "{{ trigger.id == 'c1_z1' }}"
+          value_template: "{{ trigger.id == 'c2_z8' }}"
       then:
         - service: input_number.set_value
           target:
