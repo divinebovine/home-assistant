@@ -1,0 +1,100 @@
+###############################################################
+# Garage Freezer Plug Offline Monitor
+#
+# Hardware:
+#   - Zooz ZEN14 Power Switch, plugged into the garage GFCI circuit
+#   - sensor.garage_outdoor_double_plug_node_status (Z-Wave node status:
+#     alive / dead / asleep / awake)
+#
+# Context:
+#   The garage GFCI has been tripping intermittently, killing power to
+#   the freezer on that circuit. This is a stopgap alert so a trip gets
+#   noticed and the GFCI reset before food spoils, while the underlying
+#   fault is investigated.
+#
+# Logic:
+#   - Alert when the plug's node status goes dead/unavailable (held for
+#     1 minute to avoid flagging a brief mesh blip)
+#   - Re-notify every 15 minutes while still offline, so a missed alert
+#     doesn't turn into a ruined freezer
+#   - Send an all-clear when the plug reports alive again
+###############################################################
+
+# ----------------------------------------------------------
+# AUTOMATION 1: Garage Freezer Plug Offline
+# ----------------------------------------------------------
+- id: garage_freezer_plug_offline
+  alias: "Safety - Garage Freezer Plug Offline"
+  description: >
+    Alerts when the garage freezer's Zooz ZEN14 goes offline (likely the
+    GFCI tripped), and repeats every 15 minutes until power is restored.
+
+  trigger:
+    - platform: state
+      entity_id: sensor.garage_outdoor_double_plug_node_status
+      to:
+        - "dead"
+        - "unavailable"
+      for:
+        minutes: 1
+
+  action:
+    - repeat:
+        while:
+          - condition: template
+            value_template: >
+              {{ states('sensor.garage_outdoor_double_plug_node_status') in ['dead', 'unavailable'] }}
+        sequence:
+          - service: notify.mobile_app_pixel_8_pro
+            data:
+              title: "🔌⚠️ Garage Freezer Plug Offline"
+              message: >
+                The garage outdoor double plug (freezer circuit) is offline
+                ({{ states('sensor.garage_outdoor_double_plug_node_status') }})
+                — the GFCI likely tripped. Reset it now to avoid losing food
+                in the freezer.
+              data:
+                channel: "Emergency Alerts"
+                importance: high
+                ttl: 0
+                priority: high
+                color: red
+                persistent: true
+
+          - delay:
+              minutes: 15
+
+  mode: single
+
+# ----------------------------------------------------------
+# AUTOMATION 2: Garage Freezer Plug Back Online
+# ----------------------------------------------------------
+- id: garage_freezer_plug_online
+  alias: "Safety - Garage Freezer Plug Back Online"
+  description: >
+    Confirms when the garage freezer's Zooz ZEN14 comes back online after
+    a GFCI reset, and stops the repeating offline alert.
+
+  trigger:
+    - platform: state
+      entity_id: sensor.garage_outdoor_double_plug_node_status
+      from:
+        - "dead"
+        - "unavailable"
+      to: "alive"
+
+  action:
+    - service: notify.mobile_app_pixel_8_pro
+      data:
+        title: "✅🔌 Garage Freezer Plug Back Online"
+        message: >
+          The garage outdoor double plug is back online — GFCI reset
+          appears to have worked. Verify the freezer is running and cold.
+        data:
+          channel: "Emergency Alerts"
+          importance: normal
+          ttl: 0
+          priority: normal
+          color: green
+
+  mode: single

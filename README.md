@@ -40,6 +40,12 @@ Smart watering schedule (Tuesdays/Saturdays) with weather-based skipping.
 
 Monitors pump flow rate and alerts when skimmers may be clogged.
 
+### Garage Freezer Plug Monitor
+
+Alerts when the garage freezer's Zooz ZEN14 goes offline (stopgap for a
+GFCI that's been tripping), repeating every 15 minutes until power is
+restored, with a confirmation when it comes back online.
+
 ## Usage
 
 Update entity names in the automation files to match your devices before using.
