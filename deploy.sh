@@ -10,6 +10,9 @@
 #   HA_SSH_HOST — Hostname or IP of the HA machine (e.g. homeassistant.local)
 #   HA_SSH_USER — SSH user (default: root)
 #   HA_SSH_PORT — SSH port (default: 22)
+#   PRE_DEPLOY_KEEP — Number of pre-deploy backups to retain (default: 10)
+#
+# Requires `jq` locally to prune old pre-deploy backups.
 
 set -euo pipefail
 
@@ -18,6 +21,7 @@ HA_TOKEN="${HA_TOKEN:?HA_TOKEN environment variable is required}"
 HA_SSH_HOST="${HA_SSH_HOST:?HA_SSH_HOST environment variable is required}"
 HA_SSH_USER="${HA_SSH_USER:-root}"
 HA_SSH_PORT="${HA_SSH_PORT:-22}"
+PRE_DEPLOY_KEEP="${PRE_DEPLOY_KEEP:-10}"
 CONFIG_DIR="/config"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -38,6 +42,23 @@ if [ -z "$backup_slug" ]; then
   exit 1
 fi
 echo "Backup complete (slug: $backup_slug)."
+
+# ── 1b. Prune old pre-deploy backups ─────────────────────────────────────────
+command -v jq > /dev/null 2>&1 || { echo "jq is required to prune old backups — skipping prune."; }
+if command -v jq > /dev/null 2>&1; then
+  old_slugs=$(ssh "${SSH_OPTS[@]}" "${HA_SSH_USER}@${HA_SSH_HOST}" "ha backups list --raw-json" \
+    | jq -r --argjson keep "$PRE_DEPLOY_KEEP" \
+      '[.data.backups[] | select(.name | startswith("pre-deploy"))]
+       | sort_by(.date) | reverse | .[$keep:] | .[].slug')
+
+  if [ -n "$old_slugs" ]; then
+    echo "Pruning old pre-deploy backups (keeping last $PRE_DEPLOY_KEEP)..."
+    for slug in $old_slugs; do
+      ssh "${SSH_OPTS[@]}" "${HA_SSH_USER}@${HA_SSH_HOST}" "ha backups remove $slug" > /dev/null
+      echo "  ✓ removed $slug"
+    done
+  fi
+fi
 
 # ── 2. Push files via rsync ───────────────────────────────────────────────────
 echo "Ensuring rsync is available on remote..."

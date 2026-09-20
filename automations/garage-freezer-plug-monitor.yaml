@@ -8,7 +8,8 @@
 #
 # Context:
 #   The garage GFCI has been tripping intermittently, killing power to
-#   the freezer on that circuit. This is a stopgap alert so a trip gets
+#   the freezer on that circuit. Suspected cause: sprinkler spray reaching
+#   a nearby exterior outlet. This is a stopgap alert so a trip gets
 #   noticed and the GFCI reset before food spoils, while the underlying
 #   fault is investigated.
 #
@@ -18,6 +19,17 @@
 #   - Re-notify every 15 minutes while still offline, so a missed alert
 #     doesn't turn into a ruined freezer
 #   - Send an all-clear when the plug reports alive again
+#
+# Irrigation correlation:
+#   Each offline alert reports the single most relevant OpenSprinkler zone
+#   (switch.s01/02/03/04/06/07/08_station_enabled) — whichever is currently
+#   running, or otherwise whichever most recently finished — plus how long
+#   ago it started/ended. These switches reflect the controller's real
+#   state whether a zone was started by the schedule or run manually from
+#   the OpenSprinkler app, so manual runs are covered too. See
+#   open-sprinkler.yaml, which now runs zones with a 2-minute gap between
+#   them so a trip during a gap (vs. right as a zone starts) is a useful
+#   signal on its own.
 ###############################################################
 
 # ----------------------------------------------------------
@@ -45,6 +57,43 @@
             value_template: >
               {{ states('sensor.garage_outdoor_double_plug_node_status') in ['dead', 'unavailable'] }}
         sequence:
+          - variables:
+              # Reports exactly one zone: whichever is running right now,
+              # or otherwise whichever finished most recently. Avoids
+              # sweeping in an entire cycle's worth of prior zones.
+              zone_status: >
+                {% set stations = {
+                  'switch.s01_station_enabled': 'Zone 1',
+                  'switch.s02_station_enabled': 'Zone 2',
+                  'switch.s03_station_enabled': 'Zone 3',
+                  'switch.s04_station_enabled': 'Zone 4',
+                  'switch.s06_station_enabled': 'Zone 6',
+                  'switch.s07_station_enabled': 'Zone 7',
+                  'switch.s08_station_enabled': 'Zone 8'
+                } %}
+                {% set ns = namespace(active=none, active_min=none, last_off=none, last_off_min=none) %}
+                {% for eid, name in stations.items() %}
+                  {% set mins = ((now() - states[eid].last_changed).total_seconds() / 60) | round(1) if states[eid] else none %}
+                  {% if states(eid) == 'on' and mins is not none %}
+                    {% if ns.active is none or mins < ns.active_min %}
+                      {% set ns.active = name %}
+                      {% set ns.active_min = mins %}
+                    {% endif %}
+                  {% elif states(eid) == 'off' and mins is not none %}
+                    {% if ns.last_off is none or mins < ns.last_off_min %}
+                      {% set ns.last_off = name %}
+                      {% set ns.last_off_min = mins %}
+                    {% endif %}
+                  {% endif %}
+                {% endfor %}
+                {% if ns.active is not none %}
+                  Irrigation: {{ ns.active }} is currently running (started {{ ns.active_min }} min ago).
+                {% elif ns.last_off is not none %}
+                  Irrigation: no zone running — {{ ns.last_off }} finished most recently ({{ ns.last_off_min }} min ago).
+                {% else %}
+                  Irrigation: no zone activity detected.
+                {% endif %}
+
           - service: notify.mobile_app_pixel_8_pro
             data:
               title: "🔌⚠️ Garage Freezer Plug Offline"
@@ -53,6 +102,8 @@
                 ({{ states('sensor.garage_outdoor_double_plug_node_status') }})
                 — the GFCI likely tripped. Reset it now to avoid losing food
                 in the freezer.
+
+                {{ zone_status }}
               data:
                 channel: "Emergency Alerts"
                 importance: high
