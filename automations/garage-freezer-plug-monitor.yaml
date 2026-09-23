@@ -19,32 +19,38 @@
 #   a message TO it fails, so when the GFCI cuts power the node status
 #   stays "alive" indefinitely. Automation 0 pings the plug every 30
 #   seconds so a power loss flips the node to dead within ~30s.
-#   While the node is dead, pings drop to every 2 minutes to avoid
-#   flooding the mesh with route discovery for an unreachable node.
+#   After the node goes dead, pings continue every 30 seconds for 3
+#   minutes so a single dropped ping recovers quickly, then back off to
+#   every 2 minutes to avoid flooding the mesh with route discovery for
+#   an unreachable node.
 #   Requires button.garage_outdoor_double_plug_ping to be enabled
 #   (device page > entities; Z-Wave JS may ship it disabled).
 #
 # Logic:
-#   - Alert when the plug's node status goes dead/unavailable (held for
-#     1 minute, i.e. at least two consecutive failed pings, to avoid
-#     flagging a brief mesh blip)
-#   - Re-notify every 15 minutes while still offline, so a missed alert
-#     doesn't turn into a ruined freezer
-#   - Send an all-clear when the plug reports alive again
+#   - When the node goes dead/unavailable, snapshot the irrigation zone
+#     immediately, then wait up to 2 minutes (~4 consecutive failed pings)
+#     for recovery. A brief mesh blip recovers silently.
+#   - Still down after 2 minutes: alert, then re-notify every 15 minutes.
+#     The run ends the moment the plug recovers, so the next outage always
+#     starts a fresh run with its own snapshot.
+#   - Send an all-clear when the plug reports alive again after an outage
+#     long enough to have alerted
 #   - On HA startup, wait 2 minutes for Z-Wave JS to reconnect, then
 #     restart the offline alert if the plug is still down (a restart
 #     otherwise silently ends the 15-minute reminders)
 #
 # Irrigation correlation:
-#   Each offline alert reports the single most relevant OpenSprinkler zone
-#   (switch.s01/02/03/04/06/07/08_station_enabled) — whichever is currently
-#   running, or otherwise whichever most recently finished — plus how long
-#   ago it started/ended. These switches reflect the controller's real
-#   state whether a zone was started by the schedule or run manually from
-#   the OpenSprinkler app, so manual runs are covered too. See
-#   open-sprinkler.yaml, which now runs zones with a 2-minute gap between
-#   them so a trip during a gap (vs. right as a zone starts) is a useful
-#   signal on its own.
+#   Each alert reports the zone as of the moment the node went dead, not
+#   when the alert is sent: whichever zone was running, or otherwise
+#   whichever most recently finished. Uses
+#   binary_sensor.s01/02/03/04/06/07/08_station_running, which reflect the
+#   controller's real state whether a zone was started by the schedule or
+#   manually from the OpenSprinkler app. If HA restarted during the
+#   outage the snapshot is lost and the alert says the zone is unknown.
+#   "Finished X min earlier" is measured from last_changed, which resets
+#   on HA restart, so it can understate if HA restarted shortly before a
+#   trip. See open-sprinkler.yaml, which runs zones with a 2-minute gap
+#   between them so a trip during a gap is a useful signal on its own.
 ###############################################################
 
 # ----------------------------------------------------------
@@ -54,7 +60,8 @@
   alias: "Safety - Garage Freezer Plug Ping Watchdog"
   description: >
     Pings the ZEN14 every 30 seconds so Z-Wave JS notices when it loses
-    power. Backs off to every 2 minutes while the node is dead.
+    power. Keeps pinging every 30 seconds for the first 3 minutes after
+    the node goes dead, then backs off to every 2 minutes.
 
   trigger:
     - platform: time_pattern
@@ -66,7 +73,11 @@
         - condition: state
           entity_id: sensor.garage_outdoor_double_plug_node_status
           state: "alive"
-        # Node is dead/unavailable: only ping on even minutes, first slot
+        # Recently went dead: keep retrying fast so a dropped ping recovers
+        - condition: template
+          value_template: >
+            {{ (now() - states.sensor.garage_outdoor_double_plug_node_status.last_changed).total_seconds() < 180 }}
+        # Dead longer than that: only ping on even minutes, first slot
         - condition: template
           value_template: "{{ now().minute % 2 == 0 and now().second < 30 }}"
 
@@ -85,8 +96,10 @@
 - id: garage_freezer_plug_offline
   alias: "Safety - Garage Freezer Plug Offline"
   description: >
-    Alerts when the garage freezer's Zooz ZEN14 goes offline (likely the
-    GFCI tripped), and repeats every 15 minutes until power is restored.
+    Alerts when the garage freezer's Zooz ZEN14 has been offline for 2
+    minutes (likely the GFCI tripped), including the irrigation zone at
+    the moment it went offline. Repeats every 15 minutes until power is
+    restored.
 
   trigger:
     - platform: state
@@ -94,53 +107,70 @@
       to:
         - "dead"
         - "unavailable"
-      for:
-        minutes: 1
+      # Flipping between dead and unavailable is the same outage
+      not_from:
+        - "dead"
+        - "unavailable"
 
   action:
+    - variables:
+        tripped_at: "{{ now().strftime('%-I:%M %p') }}"
+
+    - variables:
+        # Captured before the confirmation wait so it reflects the trip,
+        # not the zone running when the alert finally goes out.
+        zone_at_trip: >
+          {% if trigger.platform != 'state' %}
+            Irrigation at trip: unknown (HA restarted during the outage).
+          {% else %}
+            {% set stations = {
+              'binary_sensor.s01_station_running': 'Zone 1',
+              'binary_sensor.s02_station_running': 'Zone 2',
+              'binary_sensor.s03_station_running': 'Zone 3',
+              'binary_sensor.s04_station_running': 'Zone 4',
+              'binary_sensor.s06_station_running': 'Zone 6',
+              'binary_sensor.s07_station_running': 'Zone 7',
+              'binary_sensor.s08_station_running': 'Zone 8'
+            } %}
+            {% set ns = namespace(active=none, active_min=none, last_off=none, last_off_min=none) %}
+            {% for eid, name in stations.items() %}
+              {% set mins = ((now() - states[eid].last_changed).total_seconds() / 60) | round(1) if states[eid] else none %}
+              {% if states(eid) == 'on' and mins is not none %}
+                {% if ns.active is none or mins < ns.active_min %}
+                  {% set ns.active = name %}
+                  {% set ns.active_min = mins %}
+                {% endif %}
+              {% elif states(eid) == 'off' and mins is not none %}
+                {% if ns.last_off is none or mins < ns.last_off_min %}
+                  {% set ns.last_off = name %}
+                  {% set ns.last_off_min = mins %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {% if ns.active is not none %}
+              Irrigation at trip ({{ tripped_at }}): {{ ns.active }} was running (started {{ ns.active_min }} min earlier).
+            {% elif ns.last_off is not none %}
+              Irrigation at trip ({{ tripped_at }}): no zone running — {{ ns.last_off }} finished {{ ns.last_off_min }} min earlier.
+            {% else %}
+              Irrigation at trip ({{ tripped_at }}): no zone activity recorded.
+            {% endif %}
+          {% endif %}
+
+    # Confirm it's a real outage: ~4 consecutive failed 30-second pings.
+    - wait_template: >
+        {{ states('sensor.garage_outdoor_double_plug_node_status') not in ['dead', 'unavailable'] }}
+      timeout: "00:02:00"
+      continue_on_timeout: true
+
+    - condition: template
+      value_template: "{{ not wait.completed }}"
+
     - repeat:
         while:
           - condition: template
             value_template: >
               {{ states('sensor.garage_outdoor_double_plug_node_status') in ['dead', 'unavailable'] }}
         sequence:
-          - variables:
-              # Reports exactly one zone: whichever is running right now,
-              # or otherwise whichever finished most recently. Avoids
-              # sweeping in an entire cycle's worth of prior zones.
-              zone_status: >
-                {% set stations = {
-                  'switch.s01_station_enabled': 'Zone 1',
-                  'switch.s02_station_enabled': 'Zone 2',
-                  'switch.s03_station_enabled': 'Zone 3',
-                  'switch.s04_station_enabled': 'Zone 4',
-                  'switch.s06_station_enabled': 'Zone 6',
-                  'switch.s07_station_enabled': 'Zone 7',
-                  'switch.s08_station_enabled': 'Zone 8'
-                } %}
-                {% set ns = namespace(active=none, active_min=none, last_off=none, last_off_min=none) %}
-                {% for eid, name in stations.items() %}
-                  {% set mins = ((now() - states[eid].last_changed).total_seconds() / 60) | round(1) if states[eid] else none %}
-                  {% if states(eid) == 'on' and mins is not none %}
-                    {% if ns.active is none or mins < ns.active_min %}
-                      {% set ns.active = name %}
-                      {% set ns.active_min = mins %}
-                    {% endif %}
-                  {% elif states(eid) == 'off' and mins is not none %}
-                    {% if ns.last_off is none or mins < ns.last_off_min %}
-                      {% set ns.last_off = name %}
-                      {% set ns.last_off_min = mins %}
-                    {% endif %}
-                  {% endif %}
-                {% endfor %}
-                {% if ns.active is not none %}
-                  Irrigation: {{ ns.active }} is currently running (started {{ ns.active_min }} min ago).
-                {% elif ns.last_off is not none %}
-                  Irrigation: no zone running — {{ ns.last_off }} finished most recently ({{ ns.last_off_min }} min ago).
-                {% else %}
-                  Irrigation: no zone activity detected.
-                {% endif %}
-
           - service: notify.mobile_app_pixel_8_pro
             data:
               title: "🔌⚠️ Garage Freezer Plug Offline"
@@ -150,7 +180,7 @@
                 — the GFCI likely tripped. Reset it now to avoid losing food
                 in the freezer.
 
-                {{ zone_status }}
+                {{ zone_at_trip | trim }}
               data:
                 channel: "Emergency Alerts"
                 importance: high
@@ -159,11 +189,15 @@
                 color: red
                 persistent: true
 
-          - delay:
-              minutes: 15
+          # Ends early on recovery so this run exits right away instead of
+          # sleeping through (and swallowing) a follow-up outage.
+          - wait_template: >
+              {{ states('sensor.garage_outdoor_double_plug_node_status') not in ['dead', 'unavailable'] }}
+            timeout: "00:15:00"
+            continue_on_timeout: true
 
-  # Automation 3 may also start this on HA startup; a second run while the
-  # reminder loop is already going is dropped rather than doubling alerts.
+  # Automation 3 may also start this on HA startup; a second run while one
+  # is already going is dropped rather than doubling alerts.
   mode: single
   max_exceeded: silent
 
@@ -174,7 +208,7 @@
   alias: "Safety - Garage Freezer Plug Back Online"
   description: >
     Confirms when the garage freezer's Zooz ZEN14 comes back online after
-    a GFCI reset, and stops the repeating offline alert.
+    an outage long enough to have triggered the offline alert.
 
   trigger:
     - platform: state
@@ -184,13 +218,12 @@
         - "unavailable"
       to: "alive"
 
-  # Only announce recovery if it was offline long enough for the offline
-  # alert to have fired. Frequent pings mean a single dropped ping can
-  # flip the node dead for ~30s; those blips shouldn't send an all-clear.
+  # Matches Automation 1's 2-minute confirmation wait, so blips that never
+  # alerted don't send an all-clear either.
   condition:
     - condition: template
       value_template: >
-        {{ (trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds() >= 60 }}
+        {{ (trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds() >= 120 }}
 
   action:
     - service: notify.mobile_app_pixel_8_pro
@@ -214,9 +247,9 @@
 - id: garage_freezer_plug_startup_check
   alias: "Safety - Garage Freezer Plug Startup Check"
   description: >
-    A restart kills Automation 1's reminder loop, and its state trigger
-    won't re-fire if the plug is already offline when HA comes back.
-    After startup, restart the offline alert if the plug is still down.
+    A restart kills Automation 1's run, and its state trigger won't
+    re-fire if the plug is already offline when HA comes back. After
+    startup, restart the offline alert if the plug is still down.
 
   trigger:
     - platform: homeassistant

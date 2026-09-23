@@ -45,11 +45,14 @@ Monitors pump flow rate and alerts when skimmers may be clogged.
 Alerts when the garage freezer's Zooz ZEN14 goes offline (stopgap for a
 GFCI that's been tripping), repeating every 15 minutes until power is
 restored, with a confirmation when it comes back online. Each alert
-reports which irrigation zone was running or ran most recently.
+reports which irrigation zone was running, or ran most recently, at the
+moment the plug went offline.
 
 The ZEN14 never reports on its own, so Z-Wave JS won't notice it lost
-power unless something talks to it. A watchdog pings it every 30 seconds
-(every 2 minutes while it's offline). A startup check restarts the alert
+power unless something talks to it. A watchdog pings it every 30 seconds,
+and the plug must stay unreachable for 2 minutes (about 4 failed pings in
+a row) before an alert is sent. After 3 minutes offline, pings back off
+to every 2 minutes. A startup check restarts the alert
 if Home Assistant restarts while the plug is down. Remove the watchdog
 once the GFCI fault is fixed.
 
