@@ -13,12 +13,27 @@
 #   noticed and the GFCI reset before food spoils, while the underlying
 #   fault is investigated.
 #
+# Why the ping watchdog exists:
+#   The ZEN14 is mains powered and has no power metering, so it never
+#   reports on its own while idle. Z-Wave JS only marks a node dead after
+#   a message TO it fails, so when the GFCI cuts power the node status
+#   stays "alive" indefinitely. Automation 0 pings the plug every 30
+#   seconds so a power loss flips the node to dead within ~30s.
+#   While the node is dead, pings drop to every 2 minutes to avoid
+#   flooding the mesh with route discovery for an unreachable node.
+#   Requires button.garage_outdoor_double_plug_ping to be enabled
+#   (device page > entities; Z-Wave JS may ship it disabled).
+#
 # Logic:
 #   - Alert when the plug's node status goes dead/unavailable (held for
-#     1 minute to avoid flagging a brief mesh blip)
+#     1 minute, i.e. at least two consecutive failed pings, to avoid
+#     flagging a brief mesh blip)
 #   - Re-notify every 15 minutes while still offline, so a missed alert
 #     doesn't turn into a ruined freezer
 #   - Send an all-clear when the plug reports alive again
+#   - On HA startup, wait 2 minutes for Z-Wave JS to reconnect, then
+#     restart the offline alert if the plug is still down (a restart
+#     otherwise silently ends the 15-minute reminders)
 #
 # Irrigation correlation:
 #   Each offline alert reports the single most relevant OpenSprinkler zone
@@ -31,6 +46,38 @@
 #   them so a trip during a gap (vs. right as a zone starts) is a useful
 #   signal on its own.
 ###############################################################
+
+# ----------------------------------------------------------
+# AUTOMATION 0: Garage Freezer Plug Ping Watchdog
+# ----------------------------------------------------------
+- id: garage_freezer_plug_ping
+  alias: "Safety - Garage Freezer Plug Ping Watchdog"
+  description: >
+    Pings the ZEN14 every 30 seconds so Z-Wave JS notices when it loses
+    power. Backs off to every 2 minutes while the node is dead.
+
+  trigger:
+    - platform: time_pattern
+      seconds: "/30"
+
+  condition:
+    - condition: or
+      conditions:
+        - condition: state
+          entity_id: sensor.garage_outdoor_double_plug_node_status
+          state: "alive"
+        # Node is dead/unavailable: only ping on even minutes, first slot
+        - condition: template
+          value_template: "{{ now().minute % 2 == 0 and now().second < 30 }}"
+
+  action:
+    - service: button.press
+      target:
+        entity_id: button.garage_outdoor_double_plug_ping
+      continue_on_error: true
+
+  mode: single
+  max_exceeded: silent
 
 # ----------------------------------------------------------
 # AUTOMATION 1: Garage Freezer Plug Offline
@@ -115,7 +162,10 @@
           - delay:
               minutes: 15
 
+  # Automation 3 may also start this on HA startup; a second run while the
+  # reminder loop is already going is dropped rather than doubling alerts.
   mode: single
+  max_exceeded: silent
 
 # ----------------------------------------------------------
 # AUTOMATION 2: Garage Freezer Plug Back Online
@@ -134,6 +184,14 @@
         - "unavailable"
       to: "alive"
 
+  # Only announce recovery if it was offline long enough for the offline
+  # alert to have fired. Frequent pings mean a single dropped ping can
+  # flip the node dead for ~30s; those blips shouldn't send an all-clear.
+  condition:
+    - condition: template
+      value_template: >
+        {{ (trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds() >= 60 }}
+
   action:
     - service: notify.mobile_app_pixel_8_pro
       data:
@@ -147,5 +205,37 @@
           ttl: 0
           priority: normal
           color: green
+
+  mode: single
+
+# ----------------------------------------------------------
+# AUTOMATION 3: Garage Freezer Plug Startup Check
+# ----------------------------------------------------------
+- id: garage_freezer_plug_startup_check
+  alias: "Safety - Garage Freezer Plug Startup Check"
+  description: >
+    A restart kills Automation 1's reminder loop, and its state trigger
+    won't re-fire if the plug is already offline when HA comes back.
+    After startup, restart the offline alert if the plug is still down.
+
+  trigger:
+    - platform: homeassistant
+      event: start
+
+  action:
+    # Z-Wave JS entities read "unavailable" for a while after every
+    # restart; give the integration time to reconnect to avoid a false alarm.
+    - delay:
+        minutes: 2
+
+    - condition: template
+      value_template: >
+        {{ states('sensor.garage_outdoor_double_plug_node_status') in ['dead', 'unavailable'] }}
+
+    - service: automation.trigger
+      target:
+        entity_id: automation.safety_garage_freezer_plug_offline
+      data:
+        skip_condition: true
 
   mode: single
