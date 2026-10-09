@@ -26,10 +26,9 @@
 #   - input_boolean.work_meeting_announcements is off
 #   - The event is all-day
 #   - You declined it. Not checked here: the Google Calendar integration
-#     already hides events the linked account declined, which is why this
-#     uses calendar.pairpeo_2 (linked as the work account) rather than
-#     calendar.pairpeo (the same calendar shared to the personal account,
-#     where declines are not visible)
+#     already hides declined events. Google marks the attendee for the
+#     calendar being read as "self", so this works on the work calendar
+#     shared to the personal account too (verified 2026-10-09)
 #   - The title matches a focus_patterns entry
 #   - Any event on pto_calendar overlapping the meeting matches a
 #     pto_patterns entry
@@ -82,9 +81,9 @@ automation:
 
     action:
       - variables:
-          meeting_calendar: calendar.pairpeo_2
+          meeting_calendar: calendar.pairpeo
           # Point at a separate PTO calendar by changing this one value
-          pto_calendar: calendar.pairpeo_2
+          pto_calendar: calendar.pairpeo
           focus_patterns:
             - "Focus time"
           pto_patterns:
