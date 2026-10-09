@@ -25,7 +25,7 @@ PRE_DEPLOY_KEEP="${PRE_DEPLOY_KEEP:-10}"
 CONFIG_DIR="/config"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-DIRS=(automations input_boolean input_number input_text timers blueprints lovelace)
+DIRS=(automations input_boolean input_number input_text timers blueprints lovelace packages)
 
 SSH_OPTS=(-p "$HA_SSH_PORT" -o StrictHostKeyChecking=no -o BatchMode=yes)
 RSYNC_OPTS=(-az --delete -e "ssh ${SSH_OPTS[*]}")

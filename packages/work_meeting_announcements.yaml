@@ -1,0 +1,181 @@
+###############################################################
+# Work Meeting Announcements
+#
+# Hardware:
+#   - Echo Dot Gen 2 running EchoMuse (ESPHome), "Office Voice Assistant"
+#
+# Requires in configuration.yaml:
+#
+#   homeassistant:
+#     packages: !include_dir_named packages
+#
+# What it does:
+#   Speaks "<event title> starts in <N> minutes" on the Echo Dot, N
+#   minutes before each meeting on the work calendar. N comes from
+#   input_number.meeting_announcement_lead_time (2 to 30, so speech
+#   always finishes at least 1 minute before the meeting).
+#
+# Why a 1-minute time_pattern instead of a calendar trigger:
+#   The calendar trigger's offset is a fixed value and cannot be
+#   templated from a helper. Instead, every minute this asks the
+#   calendar for events starting exactly N minutes from now. Meetings
+#   starting at the same time are announced one after another in the
+#   same run, so they never talk over each other.
+#
+# Skipped when:
+#   - input_boolean.work_meeting_announcements is off
+#   - The event is all-day
+#   - You declined it. Not checked here: the Google Calendar integration
+#     already hides events the linked account declined, which is why this
+#     uses calendar.pairpeo_2 (linked as the work account) rather than
+#     calendar.pairpeo (the same calendar shared to the personal account,
+#     where declines are not visible)
+#   - The title matches a focus_patterns entry
+#   - Any event on pto_calendar overlapping the meeting matches a
+#     pto_patterns entry
+#   Patterns are case-insensitive whole words or phrases, matched as
+#   regular expressions, so escape characters like ( or + with a backslash.
+#
+# Volume:
+#   Sets the speaker to input_number.meeting_announcement_volume before
+#   speaking and restores the previous volume afterward.
+###############################################################
+
+input_boolean:
+  work_meeting_announcements:
+    name: "Meeting Announcements"
+    icon: mdi:calendar-alert
+
+input_number:
+  meeting_announcement_volume:
+    name: "Meeting Announcement Volume"
+    min: 0
+    max: 100
+    step: 5
+    unit_of_measurement: "%"
+    icon: mdi:volume-high
+  meeting_announcement_lead_time:
+    name: "Meeting Announcement Lead Time"
+    min: 2
+    max: 30
+    step: 1
+    unit_of_measurement: "min"
+    icon: mdi:timer-outline
+    mode: box
+
+automation:
+  - id: work_meeting_announcements
+    alias: "Work - Announce Upcoming Meetings"
+    description: >
+      Speaks the title of each work meeting on the office Echo Dot a
+      configurable number of minutes before it starts.
+    mode: queued
+
+    trigger:
+      - platform: time_pattern
+        minutes: "/1"
+
+    condition:
+      - condition: state
+        entity_id: input_boolean.work_meeting_announcements
+        state: "on"
+
+    action:
+      - variables:
+          meeting_calendar: calendar.pairpeo_2
+          # Point at a separate PTO calendar by changing this one value
+          pto_calendar: calendar.pairpeo_2
+          focus_patterns:
+            - "Focus time"
+          pto_patterns:
+            - "PTO"
+            - "Out of office"
+            - "OOO"
+            - "Vacation"
+          satellite: assist_satellite.office_voice_assistant_assist_satellite
+          speaker: media_player.office_voice_assistant
+          lead: "{{ states('input_number.meeting_announcement_lead_time') | int(2) }}"
+          window_start: >
+            {{ (now().replace(second=0, microsecond=0) + timedelta(minutes=lead)).isoformat() }}
+          focus_regex: '\b({{ focus_patterns | join("|") }})\b'
+          pto_regex: '\b({{ pto_patterns | join("|") }})\b'
+
+      - action: calendar.get_events
+        target:
+          entity_id: "{{ meeting_calendar }}"
+        data:
+          start_date_time: "{{ window_start }}"
+          duration:
+            minutes: 1
+        response_variable: upcoming
+
+      # Timed (not all-day) events starting in this minute, minus focus blocks
+      - variables:
+          candidates: >
+            {% set ws = as_datetime(window_start) %}
+            {% set ns = namespace(items=[]) %}
+            {% for e in upcoming[meeting_calendar].events
+               if 'T' in e.start
+               and ws <= as_datetime(e.start) < ws + timedelta(minutes=1)
+               and not (e.summary or '') is search(focus_regex, ignorecase=true) %}
+              {% set ns.items = ns.items + [e] %}
+            {% endfor %}
+            {{ ns.items }}
+          to_announce: []
+
+      - condition: template
+        value_template: "{{ candidates | count > 0 }}"
+
+      - repeat:
+          for_each: "{{ candidates }}"
+          sequence:
+            - action: calendar.get_events
+              target:
+                entity_id: "{{ pto_calendar }}"
+              data:
+                start_date_time: "{{ repeat.item.start }}"
+                end_date_time: "{{ repeat.item.end }}"
+              response_variable: overlapping
+            - if:
+                - condition: template
+                  value_template: >
+                    {{ overlapping[pto_calendar].events
+                       | rejectattr('summary', 'eq', repeat.item.summary)
+                       | selectattr('summary', 'search', pto_regex, true)
+                       | list | count == 0 }}
+              then:
+                - variables:
+                    to_announce: "{{ to_announce + [repeat.item.summary] }}"
+
+      - condition: template
+        value_template: "{{ to_announce | count > 0 }}"
+
+      - variables:
+          previous_volume: "{{ state_attr(speaker, 'volume_level') }}"
+
+      - action: media_player.volume_set
+        target:
+          entity_id: "{{ speaker }}"
+        data:
+          volume_level: >
+            {{ states('input_number.meeting_announcement_volume') | float(40) / 100 }}
+
+      - repeat:
+          for_each: "{{ to_announce }}"
+          sequence:
+            - action: assist_satellite.announce
+              target:
+                entity_id: "{{ satellite }}"
+              data:
+                message: "{{ repeat.item }} starts in {{ lead }} minutes"
+              continue_on_error: true
+
+      - if:
+          - condition: template
+            value_template: "{{ previous_volume is number }}"
+        then:
+          - action: media_player.volume_set
+            target:
+              entity_id: "{{ speaker }}"
+            data:
+              volume_level: "{{ previous_volume }}"
