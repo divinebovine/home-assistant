@@ -22,6 +22,13 @@
 #   starting at the same time are announced one after another in the
 #   same run, so they never talk over each other.
 #
+# Calendar freshness:
+#   The Google Calendar integration answers from a local copy it syncs
+#   only every 15 minutes, so a moved or cancelled meeting could be
+#   announced at its old time. On weekdays 7 AM to 6 PM each check forces
+#   a sync first (one small incremental request), so changes are at most
+#   about a minute old. Outside those hours the 15-minute sync applies.
+#
 # Skipped when:
 #   - input_boolean.work_meeting_announcements is off
 #   - The event is all-day
@@ -98,6 +105,19 @@ automation:
             {{ (now().replace(second=0, microsecond=0) + timedelta(minutes=lead)).isoformat() }}
           focus_regex: '\b({{ focus_patterns | join("|") }})\b'
           pto_regex: '\b({{ pto_patterns | join("|") }})\b'
+
+      # Work hours: sync with Google first so moved or cancelled meetings
+      # are seen. If the sync fails, carry on with the last synced copy.
+      - if:
+          - condition: time
+            after: "07:00:00"
+            before: "18:00:00"
+            weekday: [mon, tue, wed, thu, fri]
+        then:
+          - action: homeassistant.update_entity
+            target:
+              entity_id: "{{ [meeting_calendar, pto_calendar] | unique | list }}"
+            continue_on_error: true
 
       - action: calendar.get_events
         target:
