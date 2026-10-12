@@ -1,0 +1,33 @@
+# input_number/battery_helpers.yaml
+#
+# Thresholds for automations/low-battery.yaml. No `initial:` on purpose,
+# so values changed from the UI survive restarts. On first creation HA
+# sets each helper to its `min`; set them once from the UI afterward
+# (suggested: 25%, 40%, 7 days).
+
+battery_low_threshold:
+  name: "Battery Low Threshold"
+  min: 5
+  max: 100
+  step: 5
+  unit_of_measurement: "%"
+  icon: mdi:battery-low
+  mode: box
+
+battery_lock_threshold:
+  name: "Battery Low Threshold (Locks)"
+  min: 5
+  max: 100
+  step: 5
+  unit_of_measurement: "%"
+  icon: mdi:lock-alert
+  mode: box
+
+battery_stale_days:
+  name: "Battery Stale After"
+  min: 1
+  max: 30
+  step: 1
+  unit_of_measurement: "d"
+  icon: mdi:battery-unknown
+  mode: box

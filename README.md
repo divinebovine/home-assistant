@@ -26,7 +26,19 @@ Auto-locks doors after 1 hour when closed and unlocked. Sends alerts for doors l
 
 ### Battery Monitoring
 
-Daily monitoring of battery levels for all smart devices. Alerts when batteries get low.
+A daily 8 AM sync finds every battery sensor automatically. Phones and the
+Tesla are excluded. Each device that needs attention gets its own phone
+notification, and Android stacks them in one expandable "battery" group:
+
+- **Low:** below 25%, or 40% for locks.
+- **Stale:** unavailable, Z-Wave node dead, or no report for 7 days. A
+  device stuck at "100%" that has stopped reporting shows up here.
+
+Devices that are healthy again have their notification cleared. Z-Wave
+batteries that have been silent for 3+ days are asked to re-report on their
+next wake-up. Thresholds are the `input_number.battery_*` helpers. Set them
+once from the UI after the first deploy, because they start at their
+minimum values.
 
 ### Smoke Alarm
 

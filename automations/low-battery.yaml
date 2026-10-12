@@ -1,216 +1,155 @@
 ###############################################################
-# Low Battery Monitoring Automation for Battery-Powered Devices
+# Low Battery Daily Sync
 #
-# Monitored Device Types:
-#   - Door locks (front/back door locks)
-#   - Motion sensors (various locations)
-#   - Door/window sensors (open/close sensors)
-#   - Other battery-powered smart home devices
+# Monitored devices:
+#   - Every sensor with device_class: battery, discovered automatically
+#   - Excluded integrations: mobile_app (phones/tablets) and Tesla
+#     (car battery is not a replaceable cell)
 #
-# Logic:
-#   - Triggers when any device battery drops to 15% or below
-#   - Sends immediate alert with device name and current battery level
-#   - Re-notifies daily if battery remains low (below 20%)
-#   - Sends "battery replaced" confirmation when battery level rises above 80%
-#   - Uses device-friendly names in notifications when available
+# Thresholds (input_number/battery_helpers.yaml, editable from the UI):
+#   - input_number.battery_low_threshold   — most devices (suggested 25%)
+#   - input_number.battery_lock_threshold  — any device with a lock.*
+#     entity (suggested 40%; lock batteries drop off a cliff and a dead
+#     lock is the costliest failure)
+#   - input_number.battery_stale_days      — no report for this long
+#     means the reading can't be trusted (suggested 7)
+#
+# Logic (once a day at 8 AM, before the workday meetings start):
+#   - Each device needing attention gets its own phone notification in
+#     the "battery" group, tagged per entity. Android stacks them under
+#     one expandable header, so nothing is truncated, and re-sending a
+#     tag updates that entry in place instead of adding a duplicate.
+#   - Stale: battery sensor unavailable, Z-Wave node dead, or no report
+#     (last_reported) for battery_stale_days. Takes precedence over low,
+#     since the level of a stale device is not trustworthy.
+#   - Low: level below the device's threshold.
+#   - Healthy devices get clear_notification for their tag, so a
+#     replaced battery drops off the phone at the next sync.
+#   - Z-Wave batteries silent for 3+ days get zwave_js.refresh_value.
+#     Battery devices sleep, so the request is queued until the next
+#     wake-up; a device that never answers ends up flagged stale.
+#
+# Notes:
+#   - last_reported resets when HA restarts, so staleness can be
+#     understated for a few days after a restart.
+#   - Low notifications are sent highest level first, so the lowest
+#     battery is posted last and sits at the top of the group.
 ###############################################################
 
-# ----------------------------------------------------------
-# AUTOMATION 1: Low Battery Alert
-# Monitors all battery-powered devices for low battery conditions
-# ----------------------------------------------------------
-- id: low_battery_alert
-  alias: "Devices - Low Battery Alert"
+- id: low_battery_daily_sync
+  alias: "Devices - Low Battery Daily Sync"
   description: >
-    Monitors battery levels for all battery-powered devices and sends alerts
-    when batteries drop below 15%. Re-notifies daily until resolved.
-
-  trigger:
-    # Trigger when any battery level drops to 15% or below
-    - platform: numeric_state
-      entity_id: 
-        - sensor.front_door_lock_battery_level
-        - sensor.back_door_lock_battery_level
-        - sensor.front_door_open_close_sensor_battery_level
-        - sensor.back_door_open_close_sensor_battery_level
-        - sensor.kitchen_q_sensor_battery_level
-        - sensor.master_bedroom_q_sensor_battery_level
-        - sensor.office_q_sensor_battery_level
-      below: 15
-      for:
-        minutes: 5  # Avoid false alarms from temporary drops
-
-  condition:
-    # Only proceed if the device is actually unavailable or truly low
-    - condition: template
-      value_template: >
-        {{ trigger.to_state.state not in ['unknown', 'unavailable'] }}
-
-  action:
-    # Send immediate low battery alert
-    - service: notify.mobile_app_pixel_8_pro
-      data:
-        title: "🔋 Low Battery Alert"
-        message: >
-          {{ trigger.to_state.attributes.friendly_name or trigger.entity_id.split('.')[1].replace('_', ' ').title() }}
-          battery is critically low at {{ trigger.to_state.state }}%!
-          Please replace the battery soon to avoid device failure.
-        data:
-          channel: "Device Alerts"
-          importance: high
-          ttl: 0
-          priority: high
-
-    # Tag the device with current timestamp for re-notification tracking
-    - service: input_text.set_value
-      target:
-        entity_id: input_text.last_low_battery_alert
-      data:
-        value: "{{ trigger.entity_id }}: {{ now().timestamp() }}"
-
-# ----------------------------------------------------------
-# AUTOMATION 2: Daily Low Battery Reminder
-# Re-notifies for devices that remain below 20% battery
-# ----------------------------------------------------------
-- id: low_battery_daily_reminder
-  alias: "Devices - Daily Low Battery Reminder"
-  description: >
-    Daily reminder for battery-powered devices that still have low batteries
-    (below 20%). Helps ensure battery replacements aren't forgotten.
-
-  trigger:
-    - platform: time
-      at: "09:00:00"  # 9 AM daily reminder
-
-  condition:
-    # Only run if there are devices with low batteries
-    - condition: template
-      value_template: >
-        {% set ns = namespace(count=0) %}
-        {% for s in states.sensor | selectattr('attributes.device_class', 'eq', 'battery') | selectattr('state', 'is_number') %}
-          {% if s.state | int < 20 %}{% set ns.count = ns.count + 1 %}{% endif %}
-        {% endfor %}
-        {{ ns.count > 0 }}
-
-  action:
-    # Get list of all low battery devices
-    - variables:
-        low_battery_devices: >
-          {% set ns = namespace(list=[]) %}
-          {% for s in states.sensor | selectattr('attributes.device_class', 'eq', 'battery') | selectattr('state', 'is_number') %}
-            {% if s.state | int < 20 %}
-              {% set ns.list = ns.list + [(s.attributes.friendly_name or s.entity_id.split('.')[1].replace('_', ' ').title()) + ': ' + s.state + '%'] %}
-            {% endif %}
-          {% endfor %}
-          {{ ns.list }}
-
-    # Send daily reminder if there are low battery devices
-    - condition: template
-      value_template: "{{ low_battery_devices | length > 0 }}"
-
-    - service: notify.mobile_app_pixel_8_pro
-      data:
-        title: "🔋 Daily Battery Check"
-        message: >
-          Daily reminder: {{ low_battery_devices | length }} device(s) still have low batteries:
-          
-          {{ low_battery_devices | join('\n') }}
-          
-          Consider replacing these batteries today.
-        data:
-          channel: "Device Alerts"
-          importance: normal
-          ttl: 0
-          priority: normal
-
-# ----------------------------------------------------------
-# AUTOMATION 3: Battery Replaced Confirmation
-# Sends confirmation when a battery is successfully replaced
-# ----------------------------------------------------------
-- id: battery_replaced_confirmation
-  alias: "Devices - Battery Replaced Confirmation"
-  description: >
-    Sends a confirmation notification when a device battery level
-    rises above 80%, indicating successful battery replacement.
-
-  trigger:
-    # Trigger when battery level rises above 80%
-    - platform: numeric_state
-      entity_id: 
-        - sensor.front_door_lock_battery_level
-        - sensor.back_door_lock_battery_level
-        - sensor.front_door_open_close_sensor_battery_level
-        - sensor.back_door_open_close_sensor_battery_level
-        - sensor.kitchen_q_sensor_battery_level
-        - sensor.master_bedroom_q_sensor_battery_level
-        - sensor.office_q_sensor_battery_level
-      above: 80
-      for:
-        minutes: 2  # Brief delay to ensure reading is stable
-
-  condition:
-    # Only proceed if the previous state was low (below 30%)
-    - condition: template
-      value_template: >
-        {{ trigger.from_state.state is number and trigger.from_state.state < 30 }}
-
-  action:
-    # Send battery replacement confirmation
-    - service: notify.mobile_app_pixel_8_pro
-      data:
-        title: "🔋✅ Battery Replaced"
-        message: >
-          Great! {{ trigger.to_state.attributes.friendly_name or trigger.entity_id.split('.')[1].replace('_', ' ').title() }}
-          battery has been successfully replaced. Current level: {{ trigger.to_state.state }}%.
-        data:
-          channel: "Device Alerts"
-          importance: low
-          ttl: 0
-          priority: normal
-
-# ----------------------------------------------------------
-# AUTOMATION 4: Weekly Battery Status Report
-# Provides a weekly summary of all battery levels
-# ----------------------------------------------------------
-- id: weekly_battery_report
-  alias: "Devices - Weekly Battery Report"
-  description: >
-    Weekly summary of all battery-powered device battery levels for proactive
-    monitoring and maintenance planning.
+    Daily sync of per-device low and stale battery notifications.
+    Notifies devices below threshold or not reporting, clears devices
+    that are healthy again, and asks stale Z-Wave devices to re-report.
 
   trigger:
     - platform: time
       at: "08:00:00"
-  condition:
-    - condition: time
-      weekday:
-        - sun
 
   action:
     - variables:
-        all_batteries: >
-          {% set zwave_entities = integration_entities('zwave_js') %}
-          {% set ns = namespace(list=[]) %}
-          {% for s in states.sensor | selectattr('attributes.device_class', 'eq', 'battery') | selectattr('state', 'is_number') | sort(attribute='state') %}
-            {% if s.entity_id in zwave_entities %}
-              {% set level = s.state | int %}
-              {% set status = '🔴' if level < 15 else '🟡' if level < 30 else '🟢' %}
-              {% set ns.list = ns.list + [status + ' ' + (s.attributes.friendly_name or s.entity_id.split('.')[1].replace('_', ' ').title()) + ': ' + s.state + '%'] %}
-            {% endif %}
+        excluded_integrations:
+          - mobile_app
+          - tesla_fleet
+          - teslemetry
+          - tessie
+          - tesla_custom
+        refresh_days: 3
+        batteries: >
+          {% set low_threshold = states('input_number.battery_low_threshold') | float(25) %}
+          {% set lock_threshold = states('input_number.battery_lock_threshold') | float(40) %}
+          {% set stale_days = states('input_number.battery_stale_days') | float(7) %}
+          {% set ex = namespace(ids=[]) %}
+          {% for i in excluded_integrations %}
+            {% set ex.ids = ex.ids + integration_entities(i) %}
           {% endfor %}
-          {{ ns.list }}
+          {% set zwave = integration_entities('zwave_js') %}
+          {% set ns = namespace(items=[]) %}
+          {% for s in states.sensor
+               | selectattr('attributes.device_class', 'eq', 'battery')
+               | rejectattr('entity_id', 'in', ex.ids) %}
+            {% set dev = device_id(s.entity_id) %}
+            {% set dev_entities = device_entities(dev) if dev else [] %}
+            {% set threshold = lock_threshold if dev_entities | select('match', 'lock[.]') | list | count > 0 else low_threshold %}
+            {% set node_status = dev_entities | select('match', 'sensor[.].*_node_status$') | map('states') | first | default('') %}
+            {% set unavailable = s.state in ['unavailable', 'unknown'] or node_status == 'dead' %}
+            {% set days = ((now() - s.last_reported).total_seconds() / 86400) | round(1) %}
+            {% set level = s.state | int(-1) %}
+            {% set status = 'stale' if unavailable or days >= stale_days
+                       else 'low' if level < threshold
+                       else 'ok' %}
+            {% set ns.items = ns.items + [{
+                 'entity_id': s.entity_id,
+                 'tag': 'battery_' ~ s.object_id,
+                 'name': (device_attr(dev, 'name_by_user') or device_attr(dev, 'name') or s.name) if dev else s.name,
+                 'level': level,
+                 'threshold': threshold | int,
+                 'days': days,
+                 'unavailable': unavailable,
+                 'status': status,
+                 'refresh': s.entity_id in zwave and not unavailable and days >= refresh_days
+               }] %}
+          {% endfor %}
+          {{ ns.items }}
 
-    - service: notify.mobile_app_pixel_8_pro
-      data:
-        title: "🔋📊 Weekly Battery Report"
-        message: >
-          Weekly battery-powered device status:
-          
-          {{ all_batteries | join('\n') }}
-          
-          🔴 Critical (<15%) | 🟡 Low (<30%) | 🟢 Good (≥30%)
-        data:
-          channel: "Device Reports"
-          importance: low
-          ttl: 0
-          priority: normal
+    # Clear first so a device that recovered disappears before the
+    # current alerts are posted
+    - repeat:
+        for_each: "{{ batteries | selectattr('status', 'eq', 'ok') | map(attribute='tag') | list }}"
+        sequence:
+          - service: notify.mobile_app_pixel_8_pro
+            data:
+              message: clear_notification
+              data:
+                tag: "{{ repeat.item }}"
+
+    - repeat:
+        for_each: "{{ batteries | selectattr('status', 'eq', 'stale') | list }}"
+        sequence:
+          - service: notify.mobile_app_pixel_8_pro
+            data:
+              title: "⚠️ {{ repeat.item.name }} not reporting"
+              message: >
+                {% if repeat.item.unavailable -%}
+                Device is unavailable. Check the battery or Z-Wave connection.
+                {%- else -%}
+                Last report {{ repeat.item.days | int }} days ago (showed {{ repeat.item.level }}%).
+                {%- endif %}
+              data:
+                tag: "{{ repeat.item.tag }}"
+                group: battery
+                channel: "Device Alerts"
+                alert_once: true
+                ttl: 0
+                priority: high
+
+    - repeat:
+        for_each: "{{ batteries | selectattr('status', 'eq', 'low') | sort(attribute='level', reverse=true) | list }}"
+        sequence:
+          - service: notify.mobile_app_pixel_8_pro
+            data:
+              title: "🔋 {{ repeat.item.name }}: {{ repeat.item.level }}%"
+              message: >
+                Below {{ repeat.item.threshold }}%. Last reported
+                {{ 'today' if repeat.item.days < 1 else (repeat.item.days | int) ~ ' day(s) ago' }}.
+              data:
+                tag: "{{ repeat.item.tag }}"
+                group: battery
+                channel: "Device Alerts"
+                alert_once: true
+                ttl: 0
+                priority: high
+
+    - variables:
+        to_refresh: "{{ batteries | selectattr('refresh') | map(attribute='entity_id') | list }}"
+    - if:
+        - condition: template
+          value_template: "{{ to_refresh | count > 0 }}"
+      then:
+        - service: zwave_js.refresh_value
+          target:
+            entity_id: "{{ to_refresh }}"
+          continue_on_error: true
+
+  mode: single
