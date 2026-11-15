@@ -7,7 +7,7 @@
 #
 # Entities:
 #   - light.kitchen_under_cabinet_dimmer          : Under cabinet light
-#   - node_id 262 (Kitchen Scene Controller)      : ZEN35 scene controller
+#   - node_id 10 (Kitchen Scene Controller)      : ZEN35 scene controller
 #
 # Button Behavior:
 #   - Button 1 press      : Set to 100% brightness
@@ -25,42 +25,42 @@
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        node_id: 262
+        node_id: 10
         label: "Scene 001"
         value: KeyPressed
       id: button_1_press
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        node_id: 262
+        node_id: 10
         label: "Scene 001"
         value: KeyHeldDown
       id: button_1_hold
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        node_id: 262
+        node_id: 10
         label: "Scene 001"
         value: KeyReleased
       id: button_1_release
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        node_id: 262
+        node_id: 10
         label: "Scene 003"
         value: KeyPressed
       id: button_3_press
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        node_id: 262
+        node_id: 10
         label: "Scene 003"
         value: KeyHeldDown
       id: button_3_hold
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
-        node_id: 262
+        node_id: 10
         label: "Scene 003"
         value: KeyReleased
       id: button_3_release
