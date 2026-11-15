@@ -26,42 +26,42 @@
       event_type: zwave_js_value_notification
       event_data:
         node_id: 10
-        label: "Scene 001"
+        property_key: "001"
         value: KeyPressed
       id: button_1_press
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
         node_id: 10
-        label: "Scene 001"
+        property_key: "001"
         value: KeyHeldDown
       id: button_1_hold
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
         node_id: 10
-        label: "Scene 001"
+        property_key: "001"
         value: KeyReleased
       id: button_1_release
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
         node_id: 10
-        label: "Scene 003"
+        property_key: "003"
         value: KeyPressed
       id: button_3_press
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
         node_id: 10
-        label: "Scene 003"
+        property_key: "003"
         value: KeyHeldDown
       id: button_3_hold
     - trigger: event
       event_type: zwave_js_value_notification
       event_data:
         node_id: 10
-        label: "Scene 003"
+        property_key: "003"
         value: KeyReleased
       id: button_3_release
 
